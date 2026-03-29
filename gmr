@@ -53,9 +53,9 @@ YELLOW='\033[0;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-log()  { echo -e "${CYAN}▸${NC} $1"; }
-ok()   { echo -e "${GREEN}✔${NC} $1"; }
-warn() { echo -e "${YELLOW}⚠${NC} $1"; }
+log()  { echo -e "${CYAN}▸${NC} $1" >&2; }
+ok()   { echo -e "${GREEN}✔${NC} $1" >&2; }
+warn() { echo -e "${YELLOW}⚠${NC} $1" >&2; }
 err()  { echo -e "${RED}✖${NC} $1" >&2; exit 1; }
 
 # ── Pre-checks ──────────────────────────────────────────────────────────
@@ -250,7 +250,7 @@ git commit -m "$COMMIT_MSG"
 
 # Create MR via glab (--fill auto-pushes and fills title/description from commit)
 log "Creating Merge Request..."
-glab mr create --fill --yes --remove-source-branch
+glab mr create --fill --yes --remove-source-branch --squash-before-merge
 
 # Return to main branch
 log "Switching back to $MAIN_BRANCH..."
