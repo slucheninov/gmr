@@ -5,6 +5,41 @@ set -euo pipefail
 # Usage: gmr [branch-name]
 # If branch-name is omitted, generates from timestamp
 
+GMR_VERSION="0.1.0"
+
+# ── Help & Version ─────────────────────────────────────────────────────
+case "${1:-}" in
+  -h|--help)
+    cat <<'EOF'
+gmr — Git Merge Request automation
+
+Usage: gmr [branch-name]
+
+Creates a branch, generates an AI commit message (Gemini → Claude → manual),
+commits staged changes, and opens a GitLab Merge Request.
+
+If branch-name is omitted, generates: auto/YYYYMMDD-HHMMSS
+
+Options:
+  -h, --help      Show this help
+  -v, --version   Show version
+
+Environment variables:
+  GEMINI_API_KEY       Google Gemini API key
+  ANTHROPIC_API_KEY    Anthropic Claude API key
+  GMR_MAIN_BRANCH      Base branch (default: master)
+  GMR_GEMINI_MODEL     Gemini model (default: gemini-2.5-flash)
+  GMR_ANTHROPIC_MODEL  Claude model (default: claude-sonnet-4-20250514)
+  GMR_MAX_DIFF         Max diff lines for AI (default: 500)
+EOF
+    exit 0
+    ;;
+  -v|--version)
+    echo "gmr $GMR_VERSION"
+    exit 0
+    ;;
+esac
+
 # ── Config ──────────────────────────────────────────────────────────────
 MAIN_BRANCH="${GMR_MAIN_BRANCH:-master}"
 GEMINI_MODEL="${GMR_GEMINI_MODEL:-gemini-2.5-flash}"
