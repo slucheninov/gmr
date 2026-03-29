@@ -113,13 +113,21 @@ generate_via_gemini() {
     -d "$(jq -n --arg prompt "${COMMIT_PROMPT}${diff_content}" \
     '{
       contents: [{ parts: [{ text: $prompt }] }],
-      generationConfig: { maxOutputTokens: 300 }
+      generationConfig: { maxOutputTokens: 1024 }
     }')" 2>/dev/null)
 
   if [[ -z "$response" ]] || echo "$response" | jq -e '.error' >/dev/null 2>&1; then
     local api_error
     api_error=$(echo "$response" | jq -r '.error.message // "Unknown error"' 2>/dev/null)
     warn "Gemini API error: $api_error"
+    return 1
+  fi
+
+  # Check if response was truncated
+  local finish_reason
+  finish_reason=$(echo "$response" | jq -r '.candidates[0].finishReason // empty' 2>/dev/null)
+  if [[ "$finish_reason" == "MAX_TOKENS" ]]; then
+    warn "Gemini response truncated"
     return 1
   fi
 
@@ -148,7 +156,7 @@ generate_via_claude() {
       --arg prompt "${COMMIT_PROMPT}${diff_content}" \
     '{
       model: $model,
-      max_tokens: 300,
+      max_tokens: 1024,
       messages: [{ role: "user", content: $prompt }]
     }')" 2>/dev/null)
 
@@ -156,6 +164,14 @@ generate_via_claude() {
     local api_error
     api_error=$(echo "$response" | jq -r '.error.message // "Unknown error"' 2>/dev/null)
     warn "Claude API error: $api_error"
+    return 1
+  fi
+
+  # Check if response was truncated
+  local stop_reason
+  stop_reason=$(echo "$response" | jq -r '.stop_reason // empty' 2>/dev/null)
+  if [[ "$stop_reason" == "max_tokens" ]]; then
+    warn "Claude response truncated"
     return 1
   fi
 
@@ -197,7 +213,8 @@ generate_commit_message() {
   echo ""
 
   read -r -p "$(echo -e "${CYAN}Accept? [Y/n/e(edit)]:${NC} ")" choice
-  case "${choice,,}" in
+  choice=$(echo "$choice" | tr '[:upper:]' '[:lower:]')
+  case "$choice" in
     n)
       echo -n "Enter your commit message: "
       read -r -e COMMIT_MSG
