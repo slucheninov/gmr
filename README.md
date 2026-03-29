@@ -21,13 +21,21 @@ bash <(wget -qO- https://raw.githubusercontent.com/slucheninov/gmr/master/instal
 ```bash
 git clone https://github.com/slucheninov/gmr.git
 cd gmr
-sudo cp gmr /usr/local/bin/gmr
+./install.sh
 ```
 
-За замовчуванням встановлюється в `/usr/local/bin`. Можна змінити через `GMR_INSTALL_DIR`:
+The script is installed to `~/.gmr/bin/gmr` with a symlink in `/usr/local/bin`. To change the symlink directory:
 
 ```bash
 GMR_INSTALL_DIR=~/.local/bin bash <(curl -fsSL https://raw.githubusercontent.com/slucheninov/gmr/master/install.sh)
+```
+
+## Update
+
+Force reinstall to get the latest version:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/slucheninov/gmr/master/install.sh) -f
 ```
 
 ## Requirements
@@ -63,7 +71,7 @@ gmr [branch-name]
 | `GMR_GEMINI_MODEL` | Модель Gemini | `gemini-2.5-flash` |
 | `GMR_ANTHROPIC_MODEL` | Модель Claude | `claude-sonnet-4-20250514` |
 | `GMR_MAX_DIFF` | Макс. рядків diff для AI | `500` |
-| `GMR_INSTALL_DIR` | Каталог встановлення | `/usr/local/bin` |
+| `GMR_INSTALL_DIR` | Symlink directory | `/usr/local/bin` |
 
 ## License
 
