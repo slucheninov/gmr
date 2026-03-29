@@ -1,0 +1,208 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# gmr - Git Merge Request automation
+# Usage: gmr [branch-name]
+# If branch-name is omitted, generates from timestamp
+
+# ── Config ──────────────────────────────────────────────────────────────
+MAIN_BRANCH="${GMR_MAIN_BRANCH:-master}"
+GEMINI_MODEL="${GMR_GEMINI_MODEL:-gemini-2.5-flash}"
+ANTHROPIC_MODEL="${GMR_ANTHROPIC_MODEL:-claude-sonnet-4-20250514}"
+MAX_DIFF_LINES="${GMR_MAX_DIFF:-500}"
+
+# ── Colors ──────────────────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+log()  { echo -e "${CYAN}▸${NC} $1"; }
+ok()   { echo -e "${GREEN}✔${NC} $1"; }
+warn() { echo -e "${YELLOW}⚠${NC} $1"; }
+err()  { echo -e "${RED}✖${NC} $1" >&2; exit 1; }
+
+# ── Pre-checks ──────────────────────────────────────────────────────────
+command -v glab >/dev/null 2>&1 || err "glab не встановлено. Встанови: https://gitlab.com/gitlab-org/cli"
+command -v jq >/dev/null 2>&1   || err "jq не встановлено. Встанови: sudo apt install jq"
+command -v curl >/dev/null 2>&1 || err "curl не встановлено"
+
+if [[ -z "${GEMINI_API_KEY:-}" ]] && [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+  err "Жоден API ключ не задано. Експортуй GEMINI_API_KEY або ANTHROPIC_API_KEY"
+fi
+
+# Check we're in a git repo
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || err "Не в git-репозиторії"
+
+# Check current branch
+CURRENT_BRANCH=$(git branch --show-current)
+if [[ "$CURRENT_BRANCH" != "$MAIN_BRANCH" ]]; then
+  err "Поточна гілка '$CURRENT_BRANCH', а не '$MAIN_BRANCH'. Спершу переключись на $MAIN_BRANCH"
+fi
+
+# Check for staged/unstaged changes
+if git diff --quiet && git diff --cached --quiet; then
+  err "Немає змін для коміту. Спершу внеси зміни у файли"
+fi
+
+# ── Branch name ─────────────────────────────────────────────────────────
+BRANCH_NAME="${1:-auto/$(date +%Y%m%d-%H%M%S)}"
+log "Гілка: $BRANCH_NAME"
+
+# ── Prompt ──────────────────────────────────────────────────────────────
+COMMIT_PROMPT="Generate a git commit message for this diff using Conventional Commits format.
+Rules:
+- Format: type(scope): description
+- Types: feat, fix, chore, docs, refactor, style, test, ci, perf, build
+- Scope is optional, use only if obvious from the diff
+- Description: imperative mood, lowercase, no period, max 72 chars
+- If changes are significant, add a body after a blank line (max 3 bullet points)
+- Reply ONLY with the commit message, no markdown, no explanation
+
+Diff:
+"
+
+# ── Generate commit message via Gemini API ─────────────────────────────
+generate_via_gemini() {
+  local diff_content="$1"
+
+  [[ -z "${GEMINI_API_KEY:-}" ]] && return 1
+
+  log "Генерую commit message через Gemini API..."
+
+  local response
+  response=$(curl -s --max-time 30 \
+    "https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}" \
+    -H "content-type: application/json" \
+    -d "$(jq -n --arg prompt "${COMMIT_PROMPT}${diff_content}" \
+    '{
+      contents: [{ parts: [{ text: $prompt }] }],
+      generationConfig: { maxOutputTokens: 300 }
+    }')" 2>/dev/null)
+
+  if [[ -z "$response" ]] || echo "$response" | jq -e '.error' >/dev/null 2>&1; then
+    local api_error
+    api_error=$(echo "$response" | jq -r '.error.message // "Unknown error"' 2>/dev/null)
+    warn "Gemini API помилка: $api_error"
+    return 1
+  fi
+
+  local msg
+  msg=$(echo "$response" | jq -r '.candidates[0].content.parts[0].text // empty' 2>/dev/null)
+  [[ -z "$msg" ]] && return 1
+
+  echo "$msg"
+}
+
+# ── Generate commit message via Claude API ─────────────────────────────
+generate_via_claude() {
+  local diff_content="$1"
+
+  [[ -z "${ANTHROPIC_API_KEY:-}" ]] && return 1
+
+  log "Генерую commit message через Claude API..."
+
+  local response
+  response=$(curl -s --max-time 30 https://api.anthropic.com/v1/messages \
+    -H "content-type: application/json" \
+    -H "x-api-key: $ANTHROPIC_API_KEY" \
+    -H "anthropic-version: 2023-06-01" \
+    -d "$(jq -n \
+      --arg model "$ANTHROPIC_MODEL" \
+      --arg prompt "${COMMIT_PROMPT}${diff_content}" \
+    '{
+      model: $model,
+      max_tokens: 300,
+      messages: [{ role: "user", content: $prompt }]
+    }')" 2>/dev/null)
+
+  if [[ -z "$response" ]] || echo "$response" | jq -e '.error' >/dev/null 2>&1; then
+    local api_error
+    api_error=$(echo "$response" | jq -r '.error.message // "Unknown error"' 2>/dev/null)
+    warn "Claude API помилка: $api_error"
+    return 1
+  fi
+
+  local msg
+  msg=$(echo "$response" | jq -r '.content[0].text // empty' 2>/dev/null)
+  [[ -z "$msg" ]] && return 1
+
+  echo "$msg"
+}
+
+# ── Generate commit message (Gemini → Claude → manual) ─────────────────
+generate_commit_message() {
+  local diff_content
+
+  # Stage all changes first to get accurate diff
+  git add -A
+  diff_content=$(git diff --cached --stat && echo "---" && git diff --cached | head -n "$MAX_DIFF_LINES")
+
+  # Truncate if too long
+  if [[ $(echo "$diff_content" | wc -l) -ge $MAX_DIFF_LINES ]]; then
+    diff_content="${diff_content}
+... (diff truncated at $MAX_DIFF_LINES lines)"
+  fi
+
+  # Try Gemini first, then Claude fallback
+  COMMIT_MSG=$(generate_via_gemini "$diff_content") \
+    || COMMIT_MSG=$(generate_via_claude "$diff_content") \
+    || {
+      warn "Обидва API недоступні. Введи commit message вручну:"
+      read -r -e COMMIT_MSG
+      return
+    }
+
+  echo ""
+  echo -e "${GREEN}Згенерований commit message:${NC}"
+  echo -e "${YELLOW}────────────────────────────${NC}"
+  echo "$COMMIT_MSG"
+  echo -e "${YELLOW}────────────────────────────${NC}"
+  echo ""
+
+  read -r -p "$(echo -e "${CYAN}Прийняти? [Y/n/e(edit)]:${NC} ")" choice
+  case "${choice,,}" in
+    n)
+      echo -n "Введи свій commit message: "
+      read -r -e COMMIT_MSG
+      ;;
+    e)
+      # Open in $EDITOR for editing
+      local tmpfile
+      tmpfile=$(mktemp /tmp/gmr-commit-XXXXXX)
+      echo "$COMMIT_MSG" > "$tmpfile"
+      ${EDITOR:-vim} "$tmpfile"
+      COMMIT_MSG=$(cat "$tmpfile")
+      rm -f "$tmpfile"
+      ;;
+    *)
+      # Accept as-is
+      ;;
+  esac
+}
+
+# ── Main flow ───────────────────────────────────────────────────────────
+generate_commit_message
+
+if [[ -z "${COMMIT_MSG:-}" ]]; then
+  err "Commit message порожній. Скасовано."
+fi
+
+# Create branch and commit
+log "Створюю гілку '$BRANCH_NAME'..."
+git checkout -b "$BRANCH_NAME"
+
+log "Комічу..."
+git commit -m "$COMMIT_MSG"
+
+# Create MR via glab (--fill auto-pushes and fills title/description from commit)
+log "Створюю Merge Request..."
+glab mr create --fill --yes --remove-source-branch
+
+# Return to main branch
+log "Повертаюсь на $MAIN_BRANCH..."
+git checkout "$MAIN_BRANCH"
+git pull --quiet
+
+ok "Готово! MR створено, ти на гілці $MAIN_BRANCH"
