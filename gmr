@@ -24,31 +24,31 @@ warn() { echo -e "${YELLOW}⚠${NC} $1"; }
 err()  { echo -e "${RED}✖${NC} $1" >&2; exit 1; }
 
 # ── Pre-checks ──────────────────────────────────────────────────────────
-command -v glab >/dev/null 2>&1 || err "glab не встановлено. Встанови: https://gitlab.com/gitlab-org/cli"
-command -v jq >/dev/null 2>&1   || err "jq не встановлено. Встанови: sudo apt install jq"
-command -v curl >/dev/null 2>&1 || err "curl не встановлено"
+command -v glab >/dev/null 2>&1 || err "glab is not installed. Install: https://gitlab.com/gitlab-org/cli"
+command -v jq >/dev/null 2>&1   || err "jq is not installed. Install: sudo apt install jq"
+command -v curl >/dev/null 2>&1 || err "curl is not installed"
 
 if [[ -z "${GEMINI_API_KEY:-}" ]] && [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
-  err "Жоден API ключ не задано. Експортуй GEMINI_API_KEY або ANTHROPIC_API_KEY"
+  err "No API key set. Export GEMINI_API_KEY or ANTHROPIC_API_KEY"
 fi
 
 # Check we're in a git repo
-git rev-parse --is-inside-work-tree >/dev/null 2>&1 || err "Не в git-репозиторії"
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || err "Not inside a git repository"
 
 # Check current branch
 CURRENT_BRANCH=$(git branch --show-current)
 if [[ "$CURRENT_BRANCH" != "$MAIN_BRANCH" ]]; then
-  err "Поточна гілка '$CURRENT_BRANCH', а не '$MAIN_BRANCH'. Спершу переключись на $MAIN_BRANCH"
+  err "Current branch is '$CURRENT_BRANCH', not '$MAIN_BRANCH'. Switch to $MAIN_BRANCH first"
 fi
 
 # Check for staged/unstaged changes
 if git diff --quiet && git diff --cached --quiet; then
-  err "Немає змін для коміту. Спершу внеси зміни у файли"
+  err "No changes to commit. Make some changes first"
 fi
 
 # ── Branch name ─────────────────────────────────────────────────────────
 BRANCH_NAME="${1:-auto/$(date +%Y%m%d-%H%M%S)}"
-log "Гілка: $BRANCH_NAME"
+log "Branch: $BRANCH_NAME"
 
 # ── Prompt ──────────────────────────────────────────────────────────────
 COMMIT_PROMPT="Generate a git commit message for this diff using Conventional Commits format.
@@ -69,7 +69,7 @@ generate_via_gemini() {
 
   [[ -z "${GEMINI_API_KEY:-}" ]] && return 1
 
-  log "Генерую commit message через Gemini API..."
+  log "Generating commit message via Gemini API..."
 
   local response
   response=$(curl -s --max-time 30 \
@@ -84,7 +84,7 @@ generate_via_gemini() {
   if [[ -z "$response" ]] || echo "$response" | jq -e '.error' >/dev/null 2>&1; then
     local api_error
     api_error=$(echo "$response" | jq -r '.error.message // "Unknown error"' 2>/dev/null)
-    warn "Gemini API помилка: $api_error"
+    warn "Gemini API error: $api_error"
     return 1
   fi
 
@@ -101,7 +101,7 @@ generate_via_claude() {
 
   [[ -z "${ANTHROPIC_API_KEY:-}" ]] && return 1
 
-  log "Генерую commit message через Claude API..."
+  log "Generating commit message via Claude API..."
 
   local response
   response=$(curl -s --max-time 30 https://api.anthropic.com/v1/messages \
@@ -120,7 +120,7 @@ generate_via_claude() {
   if [[ -z "$response" ]] || echo "$response" | jq -e '.error' >/dev/null 2>&1; then
     local api_error
     api_error=$(echo "$response" | jq -r '.error.message // "Unknown error"' 2>/dev/null)
-    warn "Claude API помилка: $api_error"
+    warn "Claude API error: $api_error"
     return 1
   fi
 
@@ -149,22 +149,22 @@ generate_commit_message() {
   COMMIT_MSG=$(generate_via_gemini "$diff_content") \
     || COMMIT_MSG=$(generate_via_claude "$diff_content") \
     || {
-      warn "Обидва API недоступні. Введи commit message вручну:"
+      warn "Both APIs unavailable. Enter commit message manually:"
       read -r -e COMMIT_MSG
       return
     }
 
   echo ""
-  echo -e "${GREEN}Згенерований commit message:${NC}"
+  echo -e "${GREEN}Generated commit message:${NC}"
   echo -e "${YELLOW}────────────────────────────${NC}"
   echo "$COMMIT_MSG"
   echo -e "${YELLOW}────────────────────────────${NC}"
   echo ""
 
-  read -r -p "$(echo -e "${CYAN}Прийняти? [Y/n/e(edit)]:${NC} ")" choice
+  read -r -p "$(echo -e "${CYAN}Accept? [Y/n/e(edit)]:${NC} ")" choice
   case "${choice,,}" in
     n)
-      echo -n "Введи свій commit message: "
+      echo -n "Enter your commit message: "
       read -r -e COMMIT_MSG
       ;;
     e)
@@ -186,23 +186,23 @@ generate_commit_message() {
 generate_commit_message
 
 if [[ -z "${COMMIT_MSG:-}" ]]; then
-  err "Commit message порожній. Скасовано."
+  err "Commit message is empty. Aborted."
 fi
 
 # Create branch and commit
-log "Створюю гілку '$BRANCH_NAME'..."
+log "Creating branch '$BRANCH_NAME'..."
 git checkout -b "$BRANCH_NAME"
 
-log "Комічу..."
+log "Committing..."
 git commit -m "$COMMIT_MSG"
 
 # Create MR via glab (--fill auto-pushes and fills title/description from commit)
-log "Створюю Merge Request..."
+log "Creating Merge Request..."
 glab mr create --fill --yes --remove-source-branch
 
 # Return to main branch
-log "Повертаюсь на $MAIN_BRANCH..."
+log "Switching back to $MAIN_BRANCH..."
 git checkout "$MAIN_BRANCH"
 git pull --quiet
 
-ok "Готово! MR створено, ти на гілці $MAIN_BRANCH"
+ok "Done! MR created, you are on $MAIN_BRANCH"

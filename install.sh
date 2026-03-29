@@ -21,14 +21,14 @@ if command -v curl >/dev/null 2>&1; then
 elif command -v wget >/dev/null 2>&1; then
   download() { wget -qO- "$1"; }
 else
-  err "curl або wget не знайдено"
+  err "curl or wget not found"
 fi
 
-log "Завантажую gmr..."
+log "Downloading gmr..."
 tmpfile=$(mktemp)
-download "$RAW_URL" > "$tmpfile" || err "Не вдалось завантажити gmr"
+download "$RAW_URL" > "$tmpfile" || err "Failed to download gmr"
 
-log "Встановлюю в ${INSTALL_DIR}/gmr..."
+log "Installing to ${INSTALL_DIR}/gmr..."
 if [[ -w "$INSTALL_DIR" ]]; then
   mv "$tmpfile" "${INSTALL_DIR}/gmr"
   chmod +x "${INSTALL_DIR}/gmr"
@@ -37,4 +37,4 @@ else
   sudo chmod +x "${INSTALL_DIR}/gmr"
 fi
 
-ok "gmr встановлено! Перевір: gmr --help"
+ok "gmr installed! Verify: gmr --help"
