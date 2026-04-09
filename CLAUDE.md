@@ -20,7 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Configuration (env vars)
 
 - `GMR_MAIN_BRANCH` — base branch (default: `master`)
-- `GMR_GEMINI_MODEL` — Gemini model (default: `gemini-2.5-flash`)
+- `GMR_GEMINI_MODEL` — Gemini model (default: `gemini-flash-latest`)
 - `GMR_ANTHROPIC_MODEL` — Anthropic model (default: `claude-sonnet-4-20250514`)
 - `GMR_MAX_DIFF` — max diff lines sent to API (default: `500`)
 
