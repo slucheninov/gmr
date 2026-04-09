@@ -31,6 +31,7 @@ All notable changes to this project will be documented in this file.
 - Default Gemini model changed to `gemini-flash-latest`
 
 ### Fixed
+- Script now returns to main branch even if MR/PR creation fails (via `trap EXIT`)
 - Gemini truncation no longer causes full failure — first line of response is used as commit message
 - Claude truncation no longer causes full failure — same fix applied
 - Truncation warning now includes diff size for diagnostics

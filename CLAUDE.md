@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-`gmr` (Git Merge Request) is a single-file Bash script that automates the GitLab merge request workflow. It stages changes, generates a commit message via the Claude API, creates a branch, commits, and opens a GitLab MR — all in one command.
+`gmr` (Git Merge Request) is a single-file Bash script that automates the merge request / pull request workflow. It stages changes, generates a commit message via AI (Gemini / Claude), creates a branch, commits, and opens a GitLab MR or GitHub PR — all in one command. Platform is auto-detected from the `origin` remote URL.
 
 ## Usage
 
@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Dependencies
 
-- `glab` (GitLab CLI), `jq`, `curl`
+- `glab` (GitLab CLI) or `gh` (GitHub CLI), `jq`, `curl`
 - `GEMINI_API_KEY` and/or `ANTHROPIC_API_KEY` (at least one required)
 
 ## Configuration (env vars)
@@ -29,12 +29,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Single script (`gmr`), sequential flow:
 1. Pre-checks (tools installed, API key set, on main branch, changes exist)
 2. `git add -A` + generate commit message: Gemini (default) → Claude (fallback) → manual input
-3. Create branch, commit, `glab mr create --fill`, return to main branch
+3. Create branch, commit, open MR/PR (`glab mr create` or `gh pr create`), return to main branch
 
 ## Rules for changes
 
 - **Version**: always bump `GMR_VERSION` in `gmr` (semver: patch for fixes, minor for features, major for breaking changes)
 - **Changelog**: always update `CHANGELOG.md` — add entry under `[Unreleased]` section (Added/Changed/Fixed/Removed)
+- **README**: update `README.md` if changes affect user-facing info (new features, changed defaults, new env vars, new dependencies, changed workflow)
 
 ## Notes
 

@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: gmr [branch-name]
 # If branch-name is omitted, generates from timestamp
 
-GMR_VERSION="0.2.0"
+GMR_VERSION="0.2.1"
 
 # ── Help & Version ─────────────────────────────────────────────────────
 case "${1:-}" in
@@ -274,6 +274,15 @@ fi
 log "Creating branch '$BRANCH_NAME'..."
 git checkout -b "$BRANCH_NAME"
 
+# Ensure we return to main branch even if something fails
+cleanup() {
+  if [[ "$(git branch --show-current)" != "$MAIN_BRANCH" ]]; then
+    warn "Returning to $MAIN_BRANCH..."
+    git checkout "$MAIN_BRANCH" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
 log "Committing..."
 git commit -m "$COMMIT_MSG"
 
@@ -288,6 +297,7 @@ else
 fi
 
 # Return to main branch
+trap - EXIT
 log "Switching back to $MAIN_BRANCH..."
 git checkout "$MAIN_BRANCH"
 git pull --quiet
