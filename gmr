@@ -5,18 +5,18 @@ set -euo pipefail
 # Usage: gmr [branch-name]
 # If branch-name is omitted, generates from timestamp
 
-GMR_VERSION="0.1.0"
+GMR_VERSION="0.2.0"
 
 # ── Help & Version ─────────────────────────────────────────────────────
 case "${1:-}" in
   -h|--help)
     cat <<'EOF'
-gmr — Git Merge Request automation
+gmr — Git Merge Request / Pull Request automation
 
 Usage: gmr [branch-name]
 
 Creates a branch, generates an AI commit message (Gemini → Claude → manual),
-commits staged changes, and opens a GitLab Merge Request.
+commits staged changes, and opens a GitLab MR or GitHub PR (auto-detected).
 
 If branch-name is omitted, generates: auto/YYYYMMDD-HHMMSS
 
@@ -59,7 +59,6 @@ warn() { echo -e "${YELLOW}⚠${NC} $1" >&2; }
 err()  { echo -e "${RED}✖${NC} $1" >&2; exit 1; }
 
 # ── Pre-checks ──────────────────────────────────────────────────────────
-command -v glab >/dev/null 2>&1 || err "glab is not installed. Install: https://gitlab.com/gitlab-org/cli"
 command -v jq >/dev/null 2>&1   || err "jq is not installed. Install: sudo apt install jq"
 command -v curl >/dev/null 2>&1 || err "curl is not installed"
 
@@ -69,6 +68,29 @@ fi
 
 # Check we're in a git repo
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || err "Not inside a git repository"
+
+# ── Detect platform (GitLab or GitHub) ─────────────────────────────────
+detect_platform() {
+  local remote_url
+  remote_url=$(git remote get-url origin 2>/dev/null) || err "No 'origin' remote found"
+
+  if [[ "$remote_url" == *"github.com"* ]]; then
+    echo "github"
+  elif [[ "$remote_url" == *"gitlab"* ]]; then
+    echo "gitlab"
+  else
+    err "Unknown platform for remote: $remote_url (expected github.com or gitlab)"
+  fi
+}
+
+PLATFORM=$(detect_platform)
+log "Platform: $PLATFORM"
+
+if [[ "$PLATFORM" == "gitlab" ]]; then
+  command -v glab >/dev/null 2>&1 || err "glab is not installed. Install: https://gitlab.com/gitlab-org/cli"
+else
+  command -v gh >/dev/null 2>&1 || err "gh is not installed. Install: https://cli.github.com"
+fi
 
 # Check current branch
 CURRENT_BRANCH=$(git branch --show-current)
@@ -124,17 +146,20 @@ generate_via_gemini() {
     return 1
   fi
 
-  # Check if response was truncated
-  local finish_reason
-  finish_reason=$(echo "$response" | jq -r '.candidates[0].finishReason // empty' 2>/dev/null)
-  if [[ "$finish_reason" == "MAX_TOKENS" ]]; then
-    warn "Gemini response truncated"
-    return 1
-  fi
-
   local msg
   msg=$(echo "$response" | jq -r '.candidates[0].content.parts[0].text // empty' 2>/dev/null)
   [[ -z "$msg" ]] && return 1
+
+  # Check if response was truncated — use first line as commit message
+  local finish_reason
+  finish_reason=$(echo "$response" | jq -r '.candidates[0].finishReason // empty' 2>/dev/null)
+  if [[ "$finish_reason" == "MAX_TOKENS" ]]; then
+    local diff_lines
+    diff_lines=$(echo "$diff_content" | wc -l | tr -d ' ')
+    warn "Gemini response truncated (diff: ${diff_lines} lines), using first line"
+    msg=$(echo "$msg" | head -1)
+    [[ -z "$msg" ]] && return 1
+  fi
 
   echo "$msg"
 }
@@ -168,17 +193,20 @@ generate_via_claude() {
     return 1
   fi
 
-  # Check if response was truncated
-  local stop_reason
-  stop_reason=$(echo "$response" | jq -r '.stop_reason // empty' 2>/dev/null)
-  if [[ "$stop_reason" == "max_tokens" ]]; then
-    warn "Claude response truncated"
-    return 1
-  fi
-
   local msg
   msg=$(echo "$response" | jq -r '.content[0].text // empty' 2>/dev/null)
   [[ -z "$msg" ]] && return 1
+
+  # Check if response was truncated — use first line as commit message
+  local stop_reason
+  stop_reason=$(echo "$response" | jq -r '.stop_reason // empty' 2>/dev/null)
+  if [[ "$stop_reason" == "max_tokens" ]]; then
+    local diff_lines
+    diff_lines=$(echo "$diff_content" | wc -l | tr -d ' ')
+    warn "Claude response truncated (diff: ${diff_lines} lines), using first line"
+    msg=$(echo "$msg" | head -1)
+    [[ -z "$msg" ]] && return 1
+  fi
 
   echo "$msg"
 }
@@ -249,13 +277,23 @@ git checkout -b "$BRANCH_NAME"
 log "Committing..."
 git commit -m "$COMMIT_MSG"
 
-# Create MR via glab (--fill auto-pushes and fills title/description from commit)
-log "Creating Merge Request..."
-glab mr create --fill --yes --remove-source-branch --squash-before-merge
+# Create MR/PR
+if [[ "$PLATFORM" == "gitlab" ]]; then
+  log "Creating Merge Request..."
+  glab mr create --fill --yes --remove-source-branch --squash-before-merge
+else
+  log "Creating Pull Request..."
+  git push -u origin "$BRANCH_NAME"
+  gh pr create --fill
+fi
 
 # Return to main branch
 log "Switching back to $MAIN_BRANCH..."
 git checkout "$MAIN_BRANCH"
 git pull --quiet
 
-ok "Done! MR created, you are on $MAIN_BRANCH"
+if [[ "$PLATFORM" == "gitlab" ]]; then
+  ok "Done! MR created, you are on $MAIN_BRANCH"
+else
+  ok "Done! PR created, you are on $MAIN_BRANCH"
+fi
