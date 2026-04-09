@@ -31,6 +31,11 @@ Single script (`gmr`), sequential flow:
 2. `git add -A` + generate commit message: Gemini (default) → Claude (fallback) → manual input
 3. Create branch, commit, `glab mr create --fill`, return to main branch
 
+## Rules for changes
+
+- **Version**: always bump `GMR_VERSION` in `gmr` (semver: patch for fixes, minor for features, major for breaking changes)
+- **Changelog**: always update `CHANGELOG.md` — add entry under `[Unreleased]` section (Added/Changed/Fixed/Removed)
+
 ## Notes
 
 - UI messages are in Ukrainian
