@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: gmr [branch-name]
 # If branch-name is omitted, generates from timestamp
 
-GMR_VERSION="0.2.1"
+GMR_VERSION="0.3.0"
 
 # ── Help & Version ─────────────────────────────────────────────────────
 case "${1:-}" in
@@ -15,7 +15,7 @@ gmr — Git Merge Request / Pull Request automation
 
 Usage: gmr [branch-name]
 
-Creates a branch, generates an AI commit message (Gemini → Claude → manual),
+Creates a branch, generates an AI commit message (Gemini → Claude → OpenAI → manual),
 commits staged changes, and opens a GitLab MR or GitHub PR (auto-detected).
 
 If branch-name is omitted, generates: auto/YYYYMMDD-HHMMSS
@@ -27,9 +27,11 @@ Options:
 Environment variables:
   GEMINI_API_KEY       Google Gemini API key
   ANTHROPIC_API_KEY    Anthropic Claude API key
+  OPENAI_API_KEY       OpenAI API key
   GMR_MAIN_BRANCH      Base branch (default: master)
   GMR_GEMINI_MODEL     Gemini model (default: gemini-flash-latest)
   GMR_ANTHROPIC_MODEL  Claude model (default: claude-sonnet-4-20250514)
+  GMR_OPENAI_MODEL     OpenAI model (default: gpt-4o-mini)
   GMR_MAX_DIFF         Max diff lines for AI (default: 500)
 EOF
     exit 0
@@ -44,6 +46,7 @@ esac
 MAIN_BRANCH="${GMR_MAIN_BRANCH:-master}"
 GEMINI_MODEL="${GMR_GEMINI_MODEL:-gemini-flash-latest}"
 ANTHROPIC_MODEL="${GMR_ANTHROPIC_MODEL:-claude-sonnet-4-20250514}"
+OPENAI_MODEL="${GMR_OPENAI_MODEL:-gpt-4o-mini}"
 MAX_DIFF_LINES="${GMR_MAX_DIFF:-500}"
 
 # ── Colors ──────────────────────────────────────────────────────────────
@@ -62,8 +65,8 @@ err()  { echo -e "${RED}✖${NC} $1" >&2; exit 1; }
 command -v jq >/dev/null 2>&1   || err "jq is not installed. Install: sudo apt install jq"
 command -v curl >/dev/null 2>&1 || err "curl is not installed"
 
-if [[ -z "${GEMINI_API_KEY:-}" ]] && [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
-  err "No API key set. Export GEMINI_API_KEY or ANTHROPIC_API_KEY"
+if [[ -z "${GEMINI_API_KEY:-}" ]] && [[ -z "${ANTHROPIC_API_KEY:-}" ]] && [[ -z "${OPENAI_API_KEY:-}" ]]; then
+  err "No API key set. Export GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY"
 fi
 
 # Check we're in a git repo
@@ -211,7 +214,53 @@ generate_via_claude() {
   echo "$msg"
 }
 
-# ── Generate commit message (Gemini → Claude → manual) ─────────────────
+# ── Generate commit message via OpenAI API ────────────────────────────
+generate_via_openai() {
+  local diff_content="$1"
+
+  [[ -z "${OPENAI_API_KEY:-}" ]] && return 1
+
+  log "Generating commit message via OpenAI API..."
+
+  local response
+  response=$(curl -s --max-time 30 https://api.openai.com/v1/chat/completions \
+    -H "content-type: application/json" \
+    -H "Authorization: Bearer ${OPENAI_API_KEY}" \
+    -d "$(jq -n \
+      --arg model "$OPENAI_MODEL" \
+      --arg prompt "${COMMIT_PROMPT}${diff_content}" \
+    '{
+      model: $model,
+      max_tokens: 1024,
+      messages: [{ role: "user", content: $prompt }]
+    }')" 2>/dev/null)
+
+  if [[ -z "$response" ]] || echo "$response" | jq -e '.error' >/dev/null 2>&1; then
+    local api_error
+    api_error=$(echo "$response" | jq -r '.error.message // "Unknown error"' 2>/dev/null)
+    warn "OpenAI API error: $api_error"
+    return 1
+  fi
+
+  local msg
+  msg=$(echo "$response" | jq -r '.choices[0].message.content // empty' 2>/dev/null)
+  [[ -z "$msg" ]] && return 1
+
+  # Check if response was truncated — use first line as commit message
+  local finish_reason
+  finish_reason=$(echo "$response" | jq -r '.choices[0].finish_reason // empty' 2>/dev/null)
+  if [[ "$finish_reason" == "length" ]]; then
+    local diff_lines
+    diff_lines=$(echo "$diff_content" | wc -l | tr -d ' ')
+    warn "OpenAI response truncated (diff: ${diff_lines} lines), using first line"
+    msg=$(echo "$msg" | head -1)
+    [[ -z "$msg" ]] && return 1
+  fi
+
+  echo "$msg"
+}
+
+# ── Generate commit message (Gemini → Claude → OpenAI → manual) ───────
 generate_commit_message() {
   local diff_content
 
@@ -228,8 +277,9 @@ generate_commit_message() {
   # Try Gemini first, then Claude fallback
   COMMIT_MSG=$(generate_via_gemini "$diff_content") \
     || COMMIT_MSG=$(generate_via_claude "$diff_content") \
+    || COMMIT_MSG=$(generate_via_openai "$diff_content") \
     || {
-      warn "Both APIs unavailable. Enter commit message manually:"
+      warn "All APIs unavailable. Enter commit message manually:"
       read -r -e COMMIT_MSG
       return
     }
