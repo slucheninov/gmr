@@ -28,7 +28,7 @@ Environment variables:
   GEMINI_API_KEY       Google Gemini API key
   ANTHROPIC_API_KEY    Anthropic Claude API key
   GMR_MAIN_BRANCH      Base branch (default: master)
-  GMR_GEMINI_MODEL     Gemini model (default: gemini-2.5-flash)
+  GMR_GEMINI_MODEL     Gemini model (default: gemini-flash-latest)
   GMR_ANTHROPIC_MODEL  Claude model (default: claude-sonnet-4-20250514)
   GMR_MAX_DIFF         Max diff lines for AI (default: 500)
 EOF
@@ -42,7 +42,7 @@ esac
 
 # ── Config ──────────────────────────────────────────────────────────────
 MAIN_BRANCH="${GMR_MAIN_BRANCH:-master}"
-GEMINI_MODEL="${GMR_GEMINI_MODEL:-gemini-2.5-flash}"
+GEMINI_MODEL="${GMR_GEMINI_MODEL:-gemini-flash-latest}"
 ANTHROPIC_MODEL="${GMR_ANTHROPIC_MODEL:-claude-sonnet-4-20250514}"
 MAX_DIFF_LINES="${GMR_MAX_DIFF:-500}"
 
@@ -108,8 +108,9 @@ generate_via_gemini() {
 
   local response
   response=$(curl -s --max-time 30 \
-    "https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}" \
+    "https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent" \
     -H "content-type: application/json" \
+    -H "x-goog-api-key: ${GEMINI_API_KEY}" \
     -d "$(jq -n --arg prompt "${COMMIT_PROMPT}${diff_content}" \
     '{
       contents: [{ parts: [{ text: $prompt }] }],
