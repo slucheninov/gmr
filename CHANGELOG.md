@@ -22,6 +22,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- GitHub support: auto-detects platform (GitLab/GitHub) from `origin` remote URL
+- Uses `gh pr create` for GitHub repos, `glab mr create` for GitLab repos
+
 ### Changed
 - Gemini API key moved from URL query parameter to `x-goog-api-key` header (recommended approach)
 - Default Gemini model changed to `gemini-flash-latest`
+
+### Fixed
+- Gemini truncation no longer causes full failure — first line of response is used as commit message
+- Claude truncation no longer causes full failure — same fix applied
+- Truncation warning now includes diff size for diagnostics
