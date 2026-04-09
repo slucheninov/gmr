@@ -25,6 +25,8 @@ All notable changes to this project will be documented in this file.
 ### Added
 - GitHub support: auto-detects platform (GitLab/GitHub) from `origin` remote URL
 - Uses `gh pr create` for GitHub repos, `glab mr create` for GitLab repos
+- OpenAI (ChatGPT) support as third fallback: Gemini → Claude → OpenAI → manual
+- `OPENAI_API_KEY` env var and `GMR_OPENAI_MODEL` config (default: `gpt-4o-mini`)
 
 ### Changed
 - Gemini API key moved from URL query parameter to `x-goog-api-key` header (recommended approach)
