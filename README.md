@@ -49,14 +49,17 @@ bash <(curl -fsSL https://raw.githubusercontent.com/slucheninov/gmr/master/insta
 ## Usage
 
 ```bash
-gmr [branch-name]
+gmr [branch-name]    # full flow: commit + MR/PR
+gmr -m               # generate commit message only
 ```
 
 Якщо `branch-name` не вказано, генерується автоматично: `auto/YYYYMMDD-HHMMSS`.
 
+З прапорцем `-m` (`--message`) скрипт лише генерує commit message через AI, без створення гілки, коміту чи MR/PR. Працює з будь-якої гілки.
+
 ## How it works
 
-1. Перевіряє, що ти на основній гілці і є зміни
+1. Перевіряє, що ти на основній гілці і є зміни (у режимі `-m` — лише зміни)
 2. Визначає платформу (GitLab / GitHub) за URL `origin` remote
 3. Стейджить всі зміни (`git add -A`)
 4. Генерує commit message через AI: Gemini → Claude → OpenAI → ручне введення

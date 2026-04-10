@@ -8,12 +8,14 @@ set -euo pipefail
 GMR_VERSION="0.4.0"
 
 # ── Help & Version ─────────────────────────────────────────────────────
+MESSAGE_ONLY=false
+
 case "${1:-}" in
   -h|--help)
     cat <<'EOF'
 gmr — Git Merge Request / Pull Request automation
 
-Usage: gmr [branch-name]
+Usage: gmr [-m] [branch-name]
 
 Creates a branch, generates an AI commit message (Gemini → Claude → OpenAI → manual),
 commits staged changes, and opens a GitLab MR or GitHub PR (auto-detected).
@@ -22,6 +24,7 @@ If branch-name is omitted, generates: auto/YYYYMMDD-HHMMSS
 
 Options:
   -h, --help      Show this help
+  -m, --message   Generate commit message only (no commit, branch, or MR/PR)
   -v, --version   Show version
 
 Environment variables:
@@ -35,6 +38,10 @@ Environment variables:
   GMR_MAX_DIFF         Max diff lines for AI (default: 500)
 EOF
     exit 0
+    ;;
+  -m|--message)
+    MESSAGE_ONLY=true
+    shift
     ;;
   -v|--version)
     echo "gmr $GMR_VERSION"
@@ -86,19 +93,21 @@ detect_platform() {
   fi
 }
 
-PLATFORM=$(detect_platform)
-log "Platform: $PLATFORM"
+if [[ "$MESSAGE_ONLY" != "true" ]]; then
+  PLATFORM=$(detect_platform)
+  log "Platform: $PLATFORM"
 
-if [[ "$PLATFORM" == "gitlab" ]]; then
-  command -v glab >/dev/null 2>&1 || err "glab is not installed. Install: https://gitlab.com/gitlab-org/cli"
-else
-  command -v gh >/dev/null 2>&1 || err "gh is not installed. Install: https://cli.github.com"
-fi
+  if [[ "$PLATFORM" == "gitlab" ]]; then
+    command -v glab >/dev/null 2>&1 || err "glab is not installed. Install: https://gitlab.com/gitlab-org/cli"
+  else
+    command -v gh >/dev/null 2>&1 || err "gh is not installed. Install: https://cli.github.com"
+  fi
 
-# Check current branch
-CURRENT_BRANCH=$(git branch --show-current)
-if [[ "$CURRENT_BRANCH" != "$MAIN_BRANCH" ]]; then
-  err "Current branch is '$CURRENT_BRANCH', not '$MAIN_BRANCH'. Switch to $MAIN_BRANCH first"
+  # Check current branch
+  CURRENT_BRANCH=$(git branch --show-current)
+  if [[ "$CURRENT_BRANCH" != "$MAIN_BRANCH" ]]; then
+    err "Current branch is '$CURRENT_BRANCH', not '$MAIN_BRANCH'. Switch to $MAIN_BRANCH first"
+  fi
 fi
 
 # Check for staged/unstaged changes
@@ -107,8 +116,10 @@ if git diff --quiet && git diff --cached --quiet; then
 fi
 
 # ── Branch name ─────────────────────────────────────────────────────────
-BRANCH_NAME="${1:-auto/$(date +%Y%m%d-%H%M%S)}"
-log "Branch: $BRANCH_NAME"
+if [[ "$MESSAGE_ONLY" != "true" ]]; then
+  BRANCH_NAME="${1:-auto/$(date +%Y%m%d-%H%M%S)}"
+  log "Branch: $BRANCH_NAME"
+fi
 
 # ── Prompt ──────────────────────────────────────────────────────────────
 COMMIT_PROMPT="Generate a git commit message for this diff using Conventional Commits format.
@@ -318,6 +329,12 @@ generate_commit_message
 
 if [[ -z "${COMMIT_MSG:-}" ]]; then
   err "Commit message is empty. Aborted."
+fi
+
+# ── Message-only mode: just output the message and exit ────────────────
+if [[ "$MESSAGE_ONLY" == "true" ]]; then
+  ok "Commit message generated (not committed)"
+  exit 0
 fi
 
 # Create branch and commit
