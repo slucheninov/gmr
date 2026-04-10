@@ -61,7 +61,8 @@ gmr [branch-name]
 3. Стейджить всі зміни (`git add -A`)
 4. Генерує commit message через AI: Gemini → Claude → OpenAI → ручне введення
 5. Створює гілку, комітить, відкриває MR (`glab`) або PR (`gh`)
-6. Повертається на основну гілку
+6. Для GitHub — вмикає auto-merge зі squash
+7. Повертається на основну гілку
 
 ## Configuration
 

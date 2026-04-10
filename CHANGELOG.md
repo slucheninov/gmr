@@ -27,6 +27,7 @@ All notable changes to this project will be documented in this file.
 - Uses `gh pr create` for GitHub repos, `glab mr create` for GitLab repos
 - OpenAI (ChatGPT) support as third fallback: Gemini → Claude → OpenAI → manual
 - `OPENAI_API_KEY` env var and `GMR_OPENAI_MODEL` config (default: `gpt-4o-mini`)
+- Auto-merge with squash for GitHub PRs (`gh pr merge --auto --squash`)
 
 ### Changed
 - Gemini API key moved from URL query parameter to `x-goog-api-key` header (recommended approach)

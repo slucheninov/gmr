@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: gmr [branch-name]
 # If branch-name is omitted, generates from timestamp
 
-GMR_VERSION="0.3.0"
+GMR_VERSION="0.4.0"
 
 # ── Help & Version ─────────────────────────────────────────────────────
 case "${1:-}" in
@@ -344,6 +344,8 @@ else
   log "Creating Pull Request..."
   git push -u origin "$BRANCH_NAME"
   gh pr create --fill
+  log "Enabling auto-merge (squash)..."
+  gh pr merge --auto --squash
 fi
 
 # Return to main branch
