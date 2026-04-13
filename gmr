@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: gmr [branch-name]
 # If branch-name is omitted, generates from timestamp
 
-GMR_VERSION="0.4.2"
+GMR_VERSION="0.4.3"
 
 # ── Help & Version ─────────────────────────────────────────────────────
 MESSAGE_ONLY=false
@@ -93,6 +93,31 @@ detect_platform() {
   fi
 }
 
+get_gitlab_project_path() {
+  local remote_url path
+  remote_url=$(git remote get-url origin 2>/dev/null) || err "No 'origin' remote found"
+
+  if [[ "$remote_url" =~ ^git@gitlab\.com:(.+)\.git$ ]]; then
+    path="${BASH_REMATCH[1]}"
+  elif [[ "$remote_url" =~ ^https://gitlab\.com/(.+)\.git$ ]]; then
+    path="${BASH_REMATCH[1]}"
+  elif [[ "$remote_url" =~ ^https://gitlab\.com/(.+)$ ]]; then
+    path="${BASH_REMATCH[1]}"
+  else
+    err "Cannot parse GitLab project path from remote: $remote_url"
+  fi
+
+  echo "$path"
+}
+
+check_cli_auth() {
+  if [[ "$PLATFORM" == "gitlab" ]]; then
+    glab auth status >/dev/null 2>&1 || err "glab is not authenticated for GitLab API. Run: glab auth login"
+  else
+    gh auth status >/dev/null 2>&1 || err "gh is not authenticated for GitHub API. Run: gh auth login"
+  fi
+}
+
 if [[ "$MESSAGE_ONLY" != "true" ]]; then
   PLATFORM=$(detect_platform)
   log "Platform: $PLATFORM"
@@ -102,6 +127,8 @@ if [[ "$MESSAGE_ONLY" != "true" ]]; then
   else
     command -v gh >/dev/null 2>&1 || err "gh is not installed. Install: https://cli.github.com"
   fi
+
+  check_cli_auth
 
   # Check current branch
   CURRENT_BRANCH=$(git branch --show-current)
@@ -339,7 +366,6 @@ fi
 
 MR_TITLE=$(printf '%s\n' "$COMMIT_MSG" | sed -n '1p')
 MR_DESCRIPTION=$(printf '%s\n' "$COMMIT_MSG" | sed '1d')
-REMOTE_URL=$(git remote get-url origin)
 
 # Create branch and commit
 log "Creating branch '$BRANCH_NAME'..."
@@ -359,10 +385,11 @@ git commit -m "$COMMIT_MSG"
 
 # Create MR/PR
 if [[ "$PLATFORM" == "gitlab" ]]; then
+  GITLAB_PROJECT=$(get_gitlab_project_path)
   git push -u origin "$BRANCH_NAME"
   log "Creating Merge Request..."
   GLAB_MR_ARGS=(
-    -R "$REMOTE_URL"
+    -R "$GITLAB_PROJECT"
     --source-branch "$BRANCH_NAME"
     --target-branch "$MAIN_BRANCH"
     --title "$MR_TITLE"

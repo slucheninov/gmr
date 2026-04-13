@@ -45,6 +45,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/slucheninov/gmr/master/insta
 - `jq`
 - `curl`
 - `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, та/або `OPENAI_API_KEY` (хоча б один)
+- Авторизований `glab` (`glab auth login`) для GitLab API або авторизований `gh` (`gh auth login`) для GitHub API
 
 ## Usage
 

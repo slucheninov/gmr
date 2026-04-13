@@ -24,6 +24,10 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - GitLab MR creation now passes repository, source branch, target branch, and title explicitly to `glab mr create`, avoiding 404 errors when `glab` mis-detects MR parameters in non-interactive mode
+- `gmr` now checks `glab`/`gh` API authentication before creating MR/PR and shows a clear login hint instead of failing later with a confusing 404 on private repositories
+
+### Changed
+- GitLab repository reference for `glab mr create` now uses the canonical `group/project` path parsed from `origin`, instead of the SSH remote URL
 
 ## [0.4.1] - 2026-04-13
 
