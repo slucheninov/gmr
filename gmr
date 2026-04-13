@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: gmr [branch-name]
 # If branch-name is omitted, generates from timestamp
 
-GMR_VERSION="0.4.1"
+GMR_VERSION="0.4.2"
 
 # ── Help & Version ─────────────────────────────────────────────────────
 MESSAGE_ONLY=false
@@ -337,6 +337,10 @@ if [[ "$MESSAGE_ONLY" == "true" ]]; then
   exit 0
 fi
 
+MR_TITLE=$(printf '%s\n' "$COMMIT_MSG" | sed -n '1p')
+MR_DESCRIPTION=$(printf '%s\n' "$COMMIT_MSG" | sed '1d')
+REMOTE_URL=$(git remote get-url origin)
+
 # Create branch and commit
 log "Creating branch '$BRANCH_NAME'..."
 git checkout -b "$BRANCH_NAME"
@@ -357,7 +361,21 @@ git commit -m "$COMMIT_MSG"
 if [[ "$PLATFORM" == "gitlab" ]]; then
   git push -u origin "$BRANCH_NAME"
   log "Creating Merge Request..."
-  glab mr create --fill --yes --remove-source-branch --squash-before-merge
+  GLAB_MR_ARGS=(
+    -R "$REMOTE_URL"
+    --source-branch "$BRANCH_NAME"
+    --target-branch "$MAIN_BRANCH"
+    --title "$MR_TITLE"
+    --yes
+    --remove-source-branch
+    --squash-before-merge
+  )
+
+  if [[ -n "${MR_DESCRIPTION//[[:space:]]/}" ]]; then
+    GLAB_MR_ARGS+=(--description "$MR_DESCRIPTION")
+  fi
+
+  glab mr create "${GLAB_MR_ARGS[@]}"
 else
   log "Creating Pull Request..."
   git push -u origin "$BRANCH_NAME"

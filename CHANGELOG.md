@@ -22,6 +22,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- GitLab MR creation now passes repository, source branch, target branch, and title explicitly to `glab mr create`, avoiding 404 errors when `glab` mis-detects MR parameters in non-interactive mode
+
 ## [0.4.1] - 2026-04-13
 
 ### Fixed
