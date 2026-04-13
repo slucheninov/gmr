@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: gmr [branch-name]
 # If branch-name is omitted, generates from timestamp
 
-GMR_VERSION="0.4.0"
+GMR_VERSION="0.4.1"
 
 # ── Help & Version ─────────────────────────────────────────────────────
 MESSAGE_ONLY=false
@@ -355,6 +355,7 @@ git commit -m "$COMMIT_MSG"
 
 # Create MR/PR
 if [[ "$PLATFORM" == "gitlab" ]]; then
+  git push -u origin "$BRANCH_NAME"
   log "Creating Merge Request..."
   glab mr create --fill --yes --remove-source-branch --squash-before-merge
 else

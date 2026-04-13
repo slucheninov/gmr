@@ -22,6 +22,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-04-13
+
+### Fixed
+- GitLab MR creation failed with 404 because branch was not pushed to remote before calling `glab mr create`; now pushes branch first
+
 ### Added
 - GitHub support: auto-detects platform (GitLab/GitHub) from `origin` remote URL
 - Uses `gh pr create` for GitHub repos, `glab mr create` for GitLab repos
