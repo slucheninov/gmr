@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: gmr [branch-name]
 # If branch-name is omitted, generates from timestamp
 
-GMR_VERSION="0.4.4"
+GMR_VERSION="0.4.5"
 
 # ── Help & Version ─────────────────────────────────────────────────────
 MESSAGE_ONLY=false
@@ -357,6 +357,22 @@ $(sed -n "1,${MAX_DIFF_LINES}p" <<< "$full_diff")"
   esac
 }
 
+build_mr_description() {
+  local commit_msg="$1"
+  local diff_stat="$2"
+  local description
+
+  description=$(printf '%s\n' "$commit_msg" | sed '1d')
+  if [[ -n "${description//[[:space:]]/}" ]]; then
+    printf '%s\n' "$description"
+    return
+  fi
+
+  printf '## Summary\n\n%s\n\n## Changes\n\n```\n%s\n```\n' \
+    "$(printf '%s\n' "$commit_msg" | sed -n '1p')" \
+    "$diff_stat"
+}
+
 # ── Main flow ───────────────────────────────────────────────────────────
 generate_commit_message
 
@@ -371,7 +387,7 @@ if [[ "$MESSAGE_ONLY" == "true" ]]; then
 fi
 
 MR_TITLE=$(printf '%s\n' "$COMMIT_MSG" | sed -n '1p')
-MR_DESCRIPTION=$(printf '%s\n' "$COMMIT_MSG" | sed '1d')
+MR_DESCRIPTION=$(build_mr_description "$COMMIT_MSG" "$(git diff --cached --stat)")
 
 # Create branch and commit
 log "Creating branch '$BRANCH_NAME'..."
@@ -404,9 +420,7 @@ if [[ "$PLATFORM" == "gitlab" ]]; then
     --squash-before-merge
   )
 
-  if [[ -n "${MR_DESCRIPTION//[[:space:]]/}" ]]; then
-    GLAB_MR_ARGS+=(--description "$MR_DESCRIPTION")
-  fi
+  GLAB_MR_ARGS+=(--description "$MR_DESCRIPTION")
 
   glab mr create "${GLAB_MR_ARGS[@]}"
 else
