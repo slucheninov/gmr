@@ -23,6 +23,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- GitLab MR creation now passes `--fill` to `glab mr create`, so `glab` no longer stops on the interactive "Choose a template" prompt when `gmr` already provides title and description
 - GitLab MR creation now always passes a non-empty description to `glab mr create`: when the commit message has no body, `gmr` auto-generates an MR description from the commit title and staged diff stat, avoiding the interactive description prompt
 - `gmr` no longer exits right after printing `Platform` and `Branch` when collecting the staged diff: the diff preview no longer uses `head` inside a `pipefail` pipeline, which previously caused a silent exit with `SIGPIPE`
 - GitLab MR creation now passes repository, source branch, target branch, and title explicitly to `glab mr create`, avoiding 404 errors when `glab` mis-detects MR parameters in non-interactive mode
