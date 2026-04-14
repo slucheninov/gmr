@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: gmr [branch-name]
 # If branch-name is omitted, generates from timestamp
 
-GMR_VERSION="0.4.3"
+GMR_VERSION="0.4.4"
 
 # ── Help & Version ─────────────────────────────────────────────────────
 MESSAGE_ONLY=false
@@ -301,10 +301,16 @@ generate_via_openai() {
 # ── Generate commit message (Gemini → Claude → OpenAI → manual) ───────
 generate_commit_message() {
   local diff_content
+  local full_diff
+  local diff_stat
 
   # Stage all changes first to get accurate diff
   git add -A
-  diff_content=$(git diff --cached --stat && echo "---" && git diff --cached | head -n "$MAX_DIFF_LINES")
+  diff_stat=$(git diff --cached --stat)
+  full_diff=$(git diff --cached)
+  diff_content="${diff_stat}
+---
+$(sed -n "1,${MAX_DIFF_LINES}p" <<< "$full_diff")"
 
   # Truncate if too long
   if [[ $(echo "$diff_content" | wc -l) -ge $MAX_DIFF_LINES ]]; then
