@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: gmr [branch-name]
 # If branch-name is omitted, generates from timestamp
 
-GMR_VERSION="0.4.6"
+GMR_VERSION="0.4.7"
 
 # ── Help & Version ─────────────────────────────────────────────────────
 MESSAGE_ONLY=false
