@@ -410,6 +410,7 @@ if [[ "$PLATFORM" == "gitlab" ]]; then
     --source-branch "$BRANCH_NAME"
     --target-branch "$MAIN_BRANCH"
     --title "$MR_TITLE"
+    --fill
     --yes
     --remove-source-branch
     --squash-before-merge
