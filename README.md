@@ -65,7 +65,7 @@ gmr -m               # generate commit message only
 3. Стейджить всі зміни (`git add -A`)
 4. Генерує commit message через AI: Gemini → Claude → OpenAI → ручне введення
 5. Створює гілку, комітить, відкриває MR (`glab`) або PR (`gh`)
-6. Для GitLab автоматично заповнює title і description для MR та створює його без інтерактивних питань `glab`: використовує body commit message, а якщо його немає — генерує опис із заголовка коміту та `git diff --cached --stat`
+6. Для GitLab передає в `glab` явні `title` і `description` для MR без конфліктного `--fill`: використовує body commit message, а якщо його немає — генерує короткий опис із заголовка коміту
 7. Для GitHub — вмикає auto-merge зі squash
 8. Повертається на основну гілку
 
