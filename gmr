@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: gmr [branch-name]
 # If branch-name is omitted, generates from timestamp
 
-GMR_VERSION="0.4.7"
+GMR_VERSION="0.4.8"
 
 # ── Help & Version ─────────────────────────────────────────────────────
 MESSAGE_ONLY=false
@@ -410,7 +410,6 @@ if [[ "$PLATFORM" == "gitlab" ]]; then
     --source-branch "$BRANCH_NAME"
     --target-branch "$MAIN_BRANCH"
     --title "$MR_TITLE"
-    --fill
     --yes
     --remove-source-branch
     --squash-before-merge
