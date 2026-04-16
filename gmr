@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: gmr [branch-name]
 # If branch-name is omitted, generates from timestamp
 
-GMR_VERSION="0.4.6"
+GMR_VERSION="0.4.7"
 
 # ── Help & Version ─────────────────────────────────────────────────────
 MESSAGE_ONLY=false
@@ -151,14 +151,12 @@ fi
 # ── Prompt ──────────────────────────────────────────────────────────────
 COMMIT_PROMPT="Generate a git commit message for this diff using Conventional Commits format.
 Rules:
-- Format: type(scope): description
-- Types: feat, fix, chore, docs, refactor, style, test, ci, perf, build
+- Format: scope: description
 - Scope is optional, use only if obvious from the diff
 - Description: imperative mood, lowercase, no period, max 72 chars
 - If changes are significant, add a body after a blank line (max 3 bullet points)
 - Reply ONLY with the commit message, no markdown, no explanation
 
-Diff:
 "
 
 # ── Generate commit message via Gemini API ─────────────────────────────
@@ -359,7 +357,6 @@ $(sed -n "1,${MAX_DIFF_LINES}p" <<< "$full_diff")"
 
 build_mr_description() {
   local commit_msg="$1"
-  local diff_stat="$2"
   local description
 
   description=$(printf '%s\n' "$commit_msg" | sed '1d')
@@ -368,9 +365,7 @@ build_mr_description() {
     return
   fi
 
-  printf '## Summary\n\n%s\n\n## Changes\n\n```\n%s\n```\n' \
-    "$(printf '%s\n' "$commit_msg" | sed -n '1p')" \
-    "$diff_stat"
+  printf '## Summary\n\n%s\n' "$(printf '%s\n' "$commit_msg" | sed -n '1p')"
 }
 
 # ── Main flow ───────────────────────────────────────────────────────────
@@ -387,7 +382,7 @@ if [[ "$MESSAGE_ONLY" == "true" ]]; then
 fi
 
 MR_TITLE=$(printf '%s\n' "$COMMIT_MSG" | sed -n '1p')
-MR_DESCRIPTION=$(build_mr_description "$COMMIT_MSG" "$(git diff --cached --stat)")
+MR_DESCRIPTION=$(build_mr_description "$COMMIT_MSG")
 
 # Create branch and commit
 log "Creating branch '$BRANCH_NAME'..."

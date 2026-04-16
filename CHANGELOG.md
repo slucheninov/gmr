@@ -22,6 +22,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- GitLab fallback MR description no longer includes a `## Changes` section with staged diff stat; when the commit message has no body, `gmr` now generates only a short `## Summary` from the commit title
+- AI-generated commit messages now use `type: description` without an optional scope like `feat(detection): ...`
+
 ### Fixed
 - GitLab MR creation now passes `--fill` to `glab mr create`, so `glab` no longer stops on the interactive "Choose a template" prompt when `gmr` already provides title and description
 - GitLab MR creation now always passes a non-empty description to `glab mr create`: when the commit message has no body, `gmr` auto-generates an MR description from the commit title and staged diff stat, avoiding the interactive description prompt
