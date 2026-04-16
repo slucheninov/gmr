@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: gmr [branch-name]
 # If branch-name is omitted, generates from timestamp
 
-GMR_VERSION="0.4.6"
+GMR_VERSION="0.4.7"
 
 # ── Help & Version ─────────────────────────────────────────────────────
 MESSAGE_ONLY=false
@@ -151,9 +151,8 @@ fi
 # ── Prompt ──────────────────────────────────────────────────────────────
 COMMIT_PROMPT="Generate a git commit message for this diff using Conventional Commits format.
 Rules:
-- Format: type(scope): description
+- Format: type: description
 - Types: feat, fix, chore, docs, refactor, style, test, ci, perf, build
-- Scope is optional, use only if obvious from the diff
 - Description: imperative mood, lowercase, no period, max 72 chars
 - If changes are significant, add a body after a blank line (max 3 bullet points)
 - Reply ONLY with the commit message, no markdown, no explanation
