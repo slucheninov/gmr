@@ -2,106 +2,206 @@ name: Release
 
 on:
   push:
-    branches:
-      - master
-      - main
-    paths:
-      - gmr
+    tags: ['v*']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v0.6.0). Leave empty to use latest tag.'
+        required: false
+        type: string
+      force:
+        description: 'Force overwrite existing release'
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: write
 
+env:
+  GO_VERSION: '1.25'
+
 jobs:
-  release:
+  setup:
+    name: Setup Release
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Read GMR_VERSION
-        id: version
+      - name: Resolve tag
+        id: resolve
         run: |
-          VERSION="$(grep -E '^GMR_VERSION=' gmr | head -n1 | sed -E 's/^GMR_VERSION="?([^"]+)"?/\1/')"
-          if [ -z "$VERSION" ]; then
-            echo "Could not parse GMR_VERSION from gmr" >&2
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG="${{ github.ref_name }}"
+          elif [ -n "${{ inputs.tag }}" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+            if [ -z "$TAG" ]; then
+              echo "::error::No tag found. Specify a tag or create one first."
+              exit 1
+            fi
+          fi
+          echo "Resolved tag: $TAG"
+          if ! git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG does not exist."
             exit 1
           fi
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Detected version: v$VERSION"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Check if tag already exists
+      - name: Check existing release
         id: check
         env:
-          TAG: ${{ steps.version.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
-            echo "Tag $TAG already exists — skipping release"
+          TAG="${{ steps.resolve.outputs.tag }}"
+          if gh release view "$TAG" &>/dev/null; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Extract release notes from CHANGELOG.md
-        if: steps.check.outputs.exists == 'false'
-        id: notes
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          NOTES_FILE="$(mktemp)"
-          bash scripts/extract-release-notes.sh "$VERSION" CHANGELOG.md > "$NOTES_FILE"
-          echo "notes_file=$NOTES_FILE" >> "$GITHUB_OUTPUT"
-          echo "----- release notes -----"
-          cat "$NOTES_FILE"
-          echo "-------------------------"
-
-      - name: Build release archives
-        if: steps.check.outputs.exists == 'false'
-        id: archives
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          STAGE="gmr-${VERSION}"
-          mkdir -p "dist/$STAGE"
-          cp gmr install.sh README.md LICENSE CHANGELOG.md "dist/$STAGE/"
-          chmod +x "dist/$STAGE/gmr" "dist/$STAGE/install.sh"
-
-          mkdir -p out
-          tar -C dist -czf "out/${STAGE}.tar.gz" "$STAGE"
-          ( cd dist && zip -qr "../out/${STAGE}.zip" "$STAGE" )
-
-          ( cd out && sha256sum "${STAGE}.tar.gz" "${STAGE}.zip" > "${STAGE}.sha256" )
-
-          echo "stage=$STAGE" >> "$GITHUB_OUTPUT"
-          echo "Built archives:"
-          ls -la out
-
-      - name: Create tag
-        if: steps.check.outputs.exists == 'false'
-        env:
-          TAG: ${{ steps.version.outputs.tag }}
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -m "Release $TAG"
-          git push origin "$TAG"
-
-      - name: Create GitHub Release
-        if: steps.check.outputs.exists == 'false'
+      - name: Delete existing release (if force)
+        if: steps.check.outputs.exists == 'true' && (github.event_name == 'workflow_dispatch' && inputs.force || github.event_name == 'push')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ steps.version.outputs.tag }}
-          NOTES_FILE: ${{ steps.notes.outputs.notes_file }}
-          STAGE: ${{ steps.archives.outputs.stage }}
+        run: gh release delete "${{ steps.resolve.outputs.tag }}" --yes || true
+
+  test:
+    name: Test
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.setup.outputs.tag }}
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - run: go test -race ./...
+
+  build:
+    name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
+    needs: [setup, test]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, darwin]
+        goarch: [amd64, arm64]
+    env:
+      RELEASE_TAG: ${{ needs.setup.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.setup.outputs.tag }}
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
         run: |
-          gh release create "$TAG" \
-            --title "$TAG" \
-            --notes-file "$NOTES_FILE" \
-            gmr \
-            install.sh \
-            "out/${STAGE}.tar.gz" \
-            "out/${STAGE}.zip" \
-            "out/${STAGE}.sha256"
+          mkdir -p dist/pkg
+          go build -trimpath \
+            -ldflags "-s -w -X github.com/slucheninov/gmr/internal/version.Version=${RELEASE_TAG}" \
+            -o dist/pkg/gmr ./cmd/gmr
+          cp LICENSE README.md CHANGELOG.md dist/pkg/ 2>/dev/null || true
+
+      - name: Package binary
+        working-directory: dist
+        run: |
+          ARCHIVE="gmr-${RELEASE_TAG}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz"
+          tar -czf "$ARCHIVE" -C pkg .
+          sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
+          rm -rf pkg
+          ls -la
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          retention-days: 7
+
+  release:
+    name: Create Release
+    needs: [setup, build]
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.setup.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.setup.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Download binary artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: binaries
+          merge-multiple: true
+
+      - name: Generate combined checksums
+        working-directory: binaries
+        run: |
+          ls -la
+          rm -f *.sha256
+          sha256sum *.tar.gz > checksums.txt
+          cat checksums.txt
+
+      - name: Generate release notes
+        run: |
+          PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -E "^v[0-9]+\.[0-9]+\.[0-9]+" | grep -vx "$RELEASE_TAG" | head -1 || echo "")
+          {
+            echo "gmr — Git Merge Request automation."
+            echo ""
+            echo "### Install"
+            echo ""
+            echo '```bash'
+            echo "curl -L -o gmr.tar.gz \\"
+            echo "  https://github.com/${{ github.repository }}/releases/download/$RELEASE_TAG/gmr-$RELEASE_TAG-linux-amd64.tar.gz"
+            echo "tar -xzf gmr.tar.gz"
+            echo "sudo install -m 0755 gmr /usr/local/bin/gmr"
+            echo "gmr --help"
+            echo '```'
+            echo ""
+            echo "Or with Go:"
+            echo ""
+            echo '```bash'
+            echo "go install github.com/slucheninov/gmr/cmd/gmr@$RELEASE_TAG"
+            echo '```'
+            echo ""
+            echo "### What's Changed"
+            echo ""
+            if [ -n "$PREVIOUS_TAG" ] && [ "$PREVIOUS_TAG" != "$RELEASE_TAG" ]; then
+              echo "Changes since $PREVIOUS_TAG:"
+              echo ""
+              git log --pretty=format:"- %s (%h)" "$PREVIOUS_TAG..$RELEASE_TAG" --no-merges
+            else
+              echo "Initial Go release."
+            fi
+          } > release_notes.md
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: gmr ${{ env.RELEASE_TAG }}
+          body_path: release_notes.md
+          files: |
+            binaries/*.tar.gz
+            binaries/checksums.txt
+          draft: false
+          prerelease: ${{ contains(env.RELEASE_TAG, '-') }}

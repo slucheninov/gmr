@@ -1,1 +1,8 @@
 settings.local.json
+
+# Go build artifacts
+/gmr
+/bin/
+/dist/
+coverage.out
+coverage.html

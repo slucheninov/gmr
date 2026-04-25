@@ -20,7 +20,24 @@ All notable changes to this project will be documented in this file.
 - `--squash-before-merge` option added to `glab mr create`
 - Max output tokens increased for both Gemini and Claude APIs
 
-## [Unreleased]
+## [0.6.0] - 2026-04-25
+
+### Changed
+- **Full rewrite from Bash to Go.** `gmr` is now a single statically-linked Go binary built from `./cmd/gmr` instead of a Bash script. Functionality is preserved (Gemini → Claude → OpenAI → manual fallback, GitLab/GitHub auto-detection, MR/PR creation, auto-merge for GitHub, return-to-main with cleanup), but the implementation is split into testable packages: `internal/ai`, `internal/git`, `internal/platform`, `internal/commit`, `internal/ui`, `internal/version`.
+- Distribution moved from raw script (`releases/latest/download/gmr` + `install.sh`) to per-OS/arch tarballs (`gmr-vX.Y.Z-{linux,darwin}-{amd64,arm64}.tar.gz`) with a single `checksums.txt`. `go install github.com/slucheninov/gmr/cmd/gmr@latest` is also supported.
+- CI (`.github/workflows/ci.yml`) now runs `go vet`, `golangci-lint`, `go test -race -coverprofile`, and a `go build` smoke test on Go 1.25 (modeled on `tentens-tech/gomcrouter`). Release workflow now triggers on `v*` tags, runs tests, cross-compiles binaries via a build matrix, and uploads them to a GitHub Release with combined SHA-256 checksums.
+- `--message` mode now writes the generated commit message to `stdout` (logs go to `stderr`), so `gmr -m` is pipe-friendly.
+
+### Added
+- Go test suite covering platform detection (`Detect`, `GitLabProjectPath`), commit-message helpers (`Title`, `Body`, `MRDescription`), main-branch resolution (`GMR_MAIN_BRANCH` → `origin/HEAD` → `main`/`master`), diff truncation (`LimitLines`), and AI providers via `httptest` (success, API-error payloads, truncation handling for Gemini `MAX_TOKENS`, Claude `max_tokens`, OpenAI `length`).
+- `NO_COLOR` env var disables ANSI colors in log output.
+- `Version` is now overridable at build time via `-ldflags "-X github.com/slucheninov/gmr/internal/version.Version=..."`, used by both CI and the release pipeline.
+
+### Removed
+- `gmr` Bash script, `install.sh`, `scripts/extract-release-notes.sh`, `tests/*.bats`, and the `bats`/`shellcheck` CI jobs — superseded by the Go implementation and Go-native tooling.
+- `jq` and `curl` runtime dependencies (the Go binary speaks HTTP and JSON natively).
+
+## [0.5.0] - 2026-04-24
 
 ### Added
 - GitHub Actions workflow `.github/workflows/release.yml` that automatically creates a GitHub Release when `GMR_VERSION` in `gmr` is bumped on `master`/`main`: it tags `vX.Y.Z`, extracts release notes for that version from `CHANGELOG.md` (falling back to `[Unreleased]`), builds `gmr-X.Y.Z.tar.gz` / `gmr-X.Y.Z.zip` archives bundling `gmr`, `install.sh`, `README.md`, `LICENSE`, `CHANGELOG.md`, generates a `gmr-X.Y.Z.sha256` checksums file, and attaches `gmr`, `install.sh`, both archives and the checksums file as release assets. Also supports manual `workflow_dispatch`.

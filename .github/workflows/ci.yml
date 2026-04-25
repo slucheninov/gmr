@@ -2,47 +2,127 @@ name: CI
 
 on:
   push:
-    branches:
-      - master
-      - main
+    branches: [master, main]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - '.golangci.yml'
+      - '.github/workflows/ci.yml'
   pull_request:
+    branches: [master, main]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - '.golangci.yml'
+      - '.github/workflows/ci.yml'
+
+env:
+  GO_VERSION: '1.25'
 
 permissions:
   contents: read
 
 jobs:
   lint:
-    name: Lint (shellcheck + bash -n)
+    name: Lint
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout code
+        uses: actions/checkout@v5
 
-      - name: Install shellcheck
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
 
-      - name: bash -n syntax check
-        run: |
-          bash -n gmr
-          bash -n install.sh
-          for f in scripts/*.sh; do bash -n "$f"; done
+      - name: go vet
+        run: go vet ./...
 
-      - name: shellcheck (install.sh + scripts)
-        run: |
-          shellcheck -x install.sh scripts/*.sh
-
-      - name: shellcheck (gmr, informational)
-        continue-on-error: true
-        run: |
-          shellcheck -x gmr
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+          only-new-issues: true
+          problem-matchers: true
 
   test:
-    name: bats tests
+    name: Test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Coverage summary
+        if: always()
+        run: |
+          echo "## Coverage" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f coverage.out ]; then
+            COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}')
+            echo "**Total: ${COVERAGE}**" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            go tool cover -func=coverage.out >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 14
+
+  build:
+    name: Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout code
+        uses: actions/checkout@v5
 
-      - name: Install bats
-        run: sudo apt-get update && sudo apt-get install -y bats
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
 
-      - name: Run bats
-        run: bats -r tests
+      - name: Get version info
+        id: version
+        run: |
+          VERSION="dev-$(git rev-parse --short HEAD)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build binary
+        run: |
+          go build -trimpath \
+            -ldflags "-s -w -X github.com/slucheninov/gmr/internal/version.Version=${{ steps.version.outputs.version }}" \
+            -o bin/gmr ./cmd/gmr
+
+      - name: Verify binary
+        run: |
+          ls -la bin/
+          ./bin/gmr --version
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gmr-linux-amd64
+          path: bin/gmr
+          retention-days: 7
