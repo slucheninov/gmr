@@ -2,6 +2,7 @@ settings.local.json
 
 # Go build artifacts
 /gmr
+/gmr.*
 /bin/
 /dist/
 coverage.out
