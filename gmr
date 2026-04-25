@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: gmr [branch-name]
 # If branch-name is omitted, generates from timestamp
 
-GMR_VERSION="0.4.11"
+GMR_VERSION="0.5.0"
 
 # ── Help & Version ─────────────────────────────────────────────────────
 MESSAGE_ONLY=false
@@ -453,7 +453,15 @@ else
   git push -u origin "$BRANCH_NAME"
   gh pr create --fill
   log "Enabling auto-merge (squash)..."
-  gh pr merge --auto --squash
+  if ! GH_MERGE_OUT=$(gh pr merge --auto --squash 2>&1); then
+    if echo "$GH_MERGE_OUT" | grep -q "Auto merge is not allowed"; then
+      warn "Auto-merge is disabled for this repository — skipping."
+      echo "  Hint: enable it in Settings → General → 'Allow auto-merge'."
+    else
+      echo "$GH_MERGE_OUT" >&2
+      warn "Failed to enable auto-merge — skipping."
+    fi
+  fi
 fi
 
 # Return to main branch

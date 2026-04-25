@@ -1,0 +1,125 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - master
+      - main
+    paths:
+      - gmr
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read GMR_VERSION
+        id: version
+        run: |
+          VERSION="$(grep -E '^GMR_VERSION=' gmr | head -n1 | sed -E 's/^GMR_VERSION="?([^"]+)"?/\1/')"
+          if [ -z "$VERSION" ]; then
+            echo "Could not parse GMR_VERSION from gmr" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Detected version: v$VERSION"
+
+      - name: Check if tag already exists
+        id: check
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists — skipping release"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract release notes from CHANGELOG.md
+        if: steps.check.outputs.exists == 'false'
+        id: notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          NOTES_FILE="$(mktemp)"
+          awk -v ver="$VERSION" '
+            $0 ~ "^## \\[" ver "\\]" { capture=1; next }
+            capture && /^## \[/ { exit }
+            capture { print }
+          ' CHANGELOG.md > "$NOTES_FILE"
+
+          if [ ! -s "$NOTES_FILE" ]; then
+            echo "No CHANGELOG section for $VERSION found, falling back to [Unreleased]"
+            awk '
+              /^## \[Unreleased\]/ { capture=1; next }
+              capture && /^## \[/ { exit }
+              capture { print }
+            ' CHANGELOG.md > "$NOTES_FILE"
+          fi
+
+          if [ ! -s "$NOTES_FILE" ]; then
+            echo "Release v$VERSION" > "$NOTES_FILE"
+          fi
+
+          echo "notes_file=$NOTES_FILE" >> "$GITHUB_OUTPUT"
+          echo "----- release notes -----"
+          cat "$NOTES_FILE"
+          echo "-------------------------"
+
+      - name: Build release archives
+        if: steps.check.outputs.exists == 'false'
+        id: archives
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          STAGE="gmr-${VERSION}"
+          mkdir -p "dist/$STAGE"
+          cp gmr install.sh README.md LICENSE CHANGELOG.md "dist/$STAGE/"
+          chmod +x "dist/$STAGE/gmr" "dist/$STAGE/install.sh"
+
+          mkdir -p out
+          tar -C dist -czf "out/${STAGE}.tar.gz" "$STAGE"
+          ( cd dist && zip -qr "../out/${STAGE}.zip" "$STAGE" )
+
+          ( cd out && sha256sum "${STAGE}.tar.gz" "${STAGE}.zip" > "${STAGE}.sha256" )
+
+          echo "stage=$STAGE" >> "$GITHUB_OUTPUT"
+          echo "Built archives:"
+          ls -la out
+
+      - name: Create tag
+        if: steps.check.outputs.exists == 'false'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+      - name: Create GitHub Release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          NOTES_FILE: ${{ steps.notes.outputs.notes_file }}
+          STAGE: ${{ steps.archives.outputs.stage }}
+        run: |
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file "$NOTES_FILE" \
+            gmr \
+            install.sh \
+            "out/${STAGE}.tar.gz" \
+            "out/${STAGE}.zip" \
+            "out/${STAGE}.sha256"

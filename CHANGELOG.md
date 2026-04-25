@@ -22,6 +22,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- GitHub Actions workflow `.github/workflows/release.yml` that automatically creates a GitHub Release when `GMR_VERSION` in `gmr` is bumped on `master`/`main`: it tags `vX.Y.Z`, extracts release notes for that version from `CHANGELOG.md` (falling back to `[Unreleased]`), builds `gmr-X.Y.Z.tar.gz` / `gmr-X.Y.Z.zip` archives bundling `gmr`, `install.sh`, `README.md`, `LICENSE`, `CHANGELOG.md`, generates a `gmr-X.Y.Z.sha256` checksums file, and attaches `gmr`, `install.sh`, both archives and the checksums file as release assets. Also supports manual `workflow_dispatch`.
+- `install.sh` now installs from GitHub Releases by default (`releases/latest/download/gmr`) with automatic fallback to raw branch download. New env vars: `GMR_INSTALL_FROM` (`release` (default) | `branch`) and `GMR_INSTALL_VERSION` (release tag, e.g. `v0.5.0`, default: `latest`).
+
+### Fixed
+- Gracefully handle GitHub repositories where auto-merge is disabled: `gh pr merge --auto --squash` failures (e.g. `Auto merge is not allowed for this repository`) no longer abort the script — a warning is shown and `gmr` continues to return to the main branch
+
 ### Changed
 - GitLab fallback MR description no longer includes a `## Changes` section with staged diff stat; when the commit message has no body, `gmr` now generates only a short `## Summary` from the commit title
 - AI-generated commit messages now use `type: description` without an optional scope like `feat(detection): ...`

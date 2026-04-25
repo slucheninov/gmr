@@ -84,6 +84,79 @@ gmr -m               # generate commit message only
 | `GMR_INSTALL_BRANCH` | Preferred branch for installer download | `master` (fallback: `main`) |
 | `GMR_INSTALL_DIR` | Symlink directory | `/usr/local/bin` |
 
+## Releases
+
+Релізи створюються автоматично через GitHub Actions (`.github/workflows/release.yml`):
+
+- Workflow тригериться при push у `master`/`main`, якщо змінився файл `gmr` (також доступний ручний запуск `workflow_dispatch`).
+- Зчитує `GMR_VERSION` зі скрипта `gmr` і, якщо тегу `vX.Y.Z` ще немає, створює його.
+- Витягує release notes для цієї версії з `CHANGELOG.md` (фолбек — секція `[Unreleased]`).
+- Збирає та прикріпляє до релізу такі ассети:
+  - `gmr` — самодостатній скрипт
+  - `install.sh` — інсталятор
+  - `gmr-X.Y.Z.tar.gz` і `gmr-X.Y.Z.zip` — архіви з `gmr`, `install.sh`, `README.md`, `LICENSE`, `CHANGELOG.md`
+  - `gmr-X.Y.Z.sha256` — SHA-256 контрольні суми для архівів
+
+Щоб випустити нову версію — у одному коміті бампнути `GMR_VERSION` у `gmr` та оновити `CHANGELOG.md`, далі змерджити в `master`.
+
+### Завантаження релізу вручну
+
+Останній реліз:
+
+```bash
+# окремий скрипт
+curl -fsSLO https://github.com/slucheninov/gmr/releases/latest/download/gmr
+
+# архів tar.gz
+curl -fsSLO https://github.com/slucheninov/gmr/releases/latest/download/gmr-$(curl -fsSL https://api.github.com/repos/slucheninov/gmr/releases/latest | jq -r .tag_name | sed 's/^v//').tar.gz
+```
+
+Конкретна версія (теги в форматі `vX.Y.Z`):
+
+```bash
+curl -fsSLO https://github.com/slucheninov/gmr/releases/download/v0.5.0/gmr-0.5.0.tar.gz
+tar -xzf gmr-0.5.0.tar.gz
+cd gmr-0.5.0 && ./install.sh
+```
+
+Перевірка контрольної суми:
+
+```bash
+curl -fsSLO https://github.com/slucheninov/gmr/releases/download/v0.5.0/gmr-0.5.0.sha256
+sha256sum -c gmr-0.5.0.sha256
+```
+
+### Як працює `install.sh`
+
+За замовчуванням інсталятор тягне `gmr` із **останнього GitHub Release** (`releases/latest/download/gmr`). Якщо реліз недоступний — фолбек на raw-файл із гілки `master` (далі `main`).
+
+Поведінкою керують env vars:
+
+| Змінна | Опис | Default |
+|---|---|---|
+| `GMR_INSTALL_FROM` | Джерело: `release` або `branch` | `release` |
+| `GMR_INSTALL_VERSION` | Тег релізу (`latest` або `vX.Y.Z`) | `latest` |
+| `GMR_INSTALL_BRANCH` | Гілка для branch-mode / фолбеку | `master` (фолбек: `main`) |
+| `GMR_INSTALL_DIR` | Куди класти symlink | `/usr/local/bin` |
+
+Приклади:
+
+```bash
+# Конкретна версія з релізу
+GMR_INSTALL_VERSION=v0.5.0 bash <(curl -fsSL https://raw.githubusercontent.com/slucheninov/gmr/master/install.sh)
+
+# Поточний код із master (без релізу)
+GMR_INSTALL_FROM=branch bash <(curl -fsSL https://raw.githubusercontent.com/slucheninov/gmr/master/install.sh)
+```
+
+Що відбувається крок за кроком:
+
+1. Парсяться аргументи (`-f` / `--force`) та env vars.
+2. Якщо `~/.gmr/bin/gmr` уже існує і немає `--force` — вихід.
+3. Завантажується файл `gmr` з обраного джерела (`curl` або `wget`).
+4. Кладеться у `~/.gmr/bin/gmr` із прапорцем виконання.
+5. Створюється symlink `${GMR_INSTALL_DIR}/gmr → ~/.gmr/bin/gmr` (через `sudo`, якщо немає прав запису).
+
 ## License
 
 [MIT](LICENSE)
