@@ -81,6 +81,7 @@ gmr -m               # generate commit message only
 | `GMR_ANTHROPIC_MODEL` | Модель Claude | `claude-sonnet-4-20250514` |
 | `GMR_OPENAI_MODEL` | Модель OpenAI | `gpt-4o-mini` |
 | `GMR_MAX_DIFF` | Макс. рядків diff для AI | `500` |
+| `GMR_INSTALL_BRANCH` | Preferred branch for installer download | `master` (fallback: `main`) |
 | `GMR_INSTALL_DIR` | Symlink directory | `/usr/local/bin` |
 
 ## License

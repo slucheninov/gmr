@@ -2,8 +2,9 @@
 set -euo pipefail
 
 REPO="slucheninov/gmr"
-BRANCH="master"
-RAW_URL="https://raw.githubusercontent.com/${REPO}/${BRANCH}/gmr"
+DEFAULT_BRANCH="${GMR_INSTALL_BRANCH:-master}"
+FALLBACK_BRANCH="main"
+RAW_BASE_URL="https://raw.githubusercontent.com/${REPO}"
 GMR_HOME="$HOME/.gmr"
 GMR_BIN="$GMR_HOME/bin/gmr"
 LINK_DIR="${GMR_INSTALL_DIR:-/usr/local/bin}"
@@ -28,6 +29,10 @@ for arg in "$@"; do
     -h|--help)
       echo "Usage: install.sh [-f|--force]"
       echo "  -f, --force   Force reinstall even if already installed"
+      echo ""
+      echo "Environment variables:"
+      echo "  GMR_INSTALL_BRANCH   Preferred branch to download from (default: master)"
+      echo "  GMR_INSTALL_DIR      Symlink directory (default: /usr/local/bin)"
       exit 0
       ;;
     *) err "Unknown option: $arg" ;;
@@ -53,7 +58,30 @@ fi
 # ── Download ───────────────────────────────────────────────────────────
 log "Downloading gmr..."
 tmpfile=$(mktemp)
-download "$RAW_URL" > "$tmpfile" || err "Failed to download gmr"
+
+resolve_download_branch() {
+  local branch
+  local url
+  local tried_branch=""
+  local candidates=("$DEFAULT_BRANCH" "$FALLBACK_BRANCH")
+
+  for branch in "${candidates[@]}"; do
+    [[ -n "$branch" ]] || continue
+    [[ "$branch" == "$tried_branch" ]] && continue
+    tried_branch="$branch"
+    url="${RAW_BASE_URL}/${branch}/gmr"
+    if download "$url" > "$tmpfile"; then
+      resolved_branch="$branch"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+resolved_branch=""
+resolve_download_branch || err "Failed to download gmr from '${DEFAULT_BRANCH}' or '${FALLBACK_BRANCH}'"
+ok "Downloaded from branch: $resolved_branch"
 
 # ── Install to ~/.gmr/bin ─────────────────────────────────────────────
 mkdir -p "$GMR_HOME/bin"

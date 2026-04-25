@@ -27,6 +27,7 @@ All notable changes to this project will be documented in this file.
 - AI-generated commit messages now use `type: description` without an optional scope like `feat(detection): ...`
 
 ### Fixed
+- Installer now defaults to downloading from `master` (with fallback to `main`) and supports override via `GMR_INSTALL_BRANCH`, so it works correctly with repositories that keep `master` as default while remaining compatible with `main`
 - Main branch detection now auto-resolves from `origin/HEAD` when `GMR_MAIN_BRANCH` is not set, so repositories with `main` no longer fail with `Current branch is 'main', not 'master'`
 - GitLab MR creation no longer passes `--fill` together with explicit `--title`/`--description`, avoiding the `glab` error `Usage of --title and --description overrides --fill`
 - GitLab MR creation now always passes a non-empty description to `glab mr create`: when the commit message has no body, `gmr` auto-generates an MR description from the commit title and staged diff stat, avoiding the interactive description prompt
