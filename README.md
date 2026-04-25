@@ -1,5 +1,11 @@
 # gmr - Git Merge Request automation
 
+[![CI](https://github.com/slucheninov/gmr/actions/workflows/ci.yml/badge.svg)](https://github.com/slucheninov/gmr/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/slucheninov/gmr?sort=semver)](https://github.com/slucheninov/gmr/releases/latest)
+[![License: MIT](https://img.shields.io/github/license/slucheninov/gmr)](LICENSE)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/slucheninov/gmr)](go.mod)
+[![Go Report Card](https://goreportcard.com/badge/github.com/slucheninov/gmr)](https://goreportcard.com/report/github.com/slucheninov/gmr)
+
 CLI-утиліта на Go, яка автоматизує створення Merge Request / Pull Request: стейджить зміни, генерує commit message через AI (Gemini / Claude / OpenAI), створює гілку і відкриває GitLab MR або GitHub PR - однією командою. Платформа визначається автоматично за URL `origin` remote.
 
 ## Installation
