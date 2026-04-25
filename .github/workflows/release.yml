@@ -55,25 +55,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           NOTES_FILE="$(mktemp)"
-          awk -v ver="$VERSION" '
-            $0 ~ "^## \\[" ver "\\]" { capture=1; next }
-            capture && /^## \[/ { exit }
-            capture { print }
-          ' CHANGELOG.md > "$NOTES_FILE"
-
-          if [ ! -s "$NOTES_FILE" ]; then
-            echo "No CHANGELOG section for $VERSION found, falling back to [Unreleased]"
-            awk '
-              /^## \[Unreleased\]/ { capture=1; next }
-              capture && /^## \[/ { exit }
-              capture { print }
-            ' CHANGELOG.md > "$NOTES_FILE"
-          fi
-
-          if [ ! -s "$NOTES_FILE" ]; then
-            echo "Release v$VERSION" > "$NOTES_FILE"
-          fi
-
+          bash scripts/extract-release-notes.sh "$VERSION" CHANGELOG.md > "$NOTES_FILE"
           echo "notes_file=$NOTES_FILE" >> "$GITHUB_OUTPUT"
           echo "----- release notes -----"
           cat "$NOTES_FILE"

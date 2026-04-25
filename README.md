@@ -157,6 +157,35 @@ GMR_INSTALL_FROM=branch bash <(curl -fsSL https://raw.githubusercontent.com/sluc
 4. Кладеться у `~/.gmr/bin/gmr` із прапорцем виконання.
 5. Створюється symlink `${GMR_INSTALL_DIR}/gmr → ~/.gmr/bin/gmr` (через `sudo`, якщо немає прав запису).
 
+## Development
+
+### Tests
+
+Тести написані на [bats-core](https://github.com/bats-core/bats-core) і живуть у `tests/`.
+
+```bash
+# macOS
+brew install bats-core shellcheck
+
+# Debian/Ubuntu
+sudo apt-get install -y bats shellcheck
+
+# запуск усіх тестів
+bats -r tests
+
+# статичний лінт
+shellcheck -x install.sh scripts/*.sh
+shellcheck -x gmr   # informational
+```
+
+Що вкрите тестами:
+
+- CLI-флаги `gmr` (`-h`, `--help`, `-v`, `--version`) та узгодженість виводу версії з `GMR_VERSION`.
+- CLI-флаги `install.sh` (help, відмова на невідомий прапорець).
+- `scripts/extract-release-notes.sh` — витяг секції з `CHANGELOG.md`, фолбек на `[Unreleased]`, фолбек на дефолтне повідомлення, обробка помилок.
+
+CI (`.github/workflows/ci.yml`) запускає `bash -n`, `shellcheck` і bats на кожен push у `master`/`main` та на pull request.
+
 ## License
 
 [MIT](LICENSE)
