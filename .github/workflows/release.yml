@@ -93,8 +93,21 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        goos: [linux, darwin]
-        goarch: [amd64, arm64]
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+            ext: .exe
+          - goos: windows
+            goarch: arm64
+            ext: .exe
     env:
       RELEASE_TAG: ${{ needs.setup.outputs.tag }}
     steps:
@@ -115,20 +128,25 @@ jobs:
           mkdir -p dist/pkg
           go build -trimpath \
             -ldflags "-s -w -X github.com/slucheninov/gmr/internal/version.Version=${RELEASE_TAG}" \
-            -o dist/pkg/gmr ./cmd/gmr
+            -o "dist/pkg/gmr${{ matrix.ext }}" ./cmd/gmr
           cp LICENSE README.md CHANGELOG.md dist/pkg/ 2>/dev/null || true
 
       - name: Package binary
         working-directory: dist
         run: |
-          ARCHIVE="gmr-${RELEASE_TAG}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz"
-          tar -czf "$ARCHIVE" -C pkg .
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            ARCHIVE="gmr-${RELEASE_TAG}-${{ matrix.goos }}-${{ matrix.goarch }}.zip"
+            ( cd pkg && zip -qr "../$ARCHIVE" . )
+          else
+            ARCHIVE="gmr-${RELEASE_TAG}-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz"
+            tar -czf "$ARCHIVE" -C pkg .
+          fi
           sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
           rm -rf pkg
           ls -la
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: binary-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
@@ -147,7 +165,7 @@ jobs:
           fetch-depth: 0
 
       - name: Download binary artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           pattern: binary-*
           path: binaries
@@ -158,7 +176,7 @@ jobs:
         run: |
           ls -la
           rm -f *.sha256
-          sha256sum *.tar.gz > checksums.txt
+          sha256sum gmr-*.tar.gz gmr-*.zip 2>/dev/null > checksums.txt
           cat checksums.txt
 
       - name: Generate release notes
@@ -202,6 +220,7 @@ jobs:
           body_path: release_notes.md
           files: |
             binaries/*.tar.gz
+            binaries/*.zip
             binaries/checksums.txt
           draft: false
           prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
