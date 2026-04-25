@@ -5,7 +5,7 @@ set -euo pipefail
 # Usage: gmr [branch-name]
 # If branch-name is omitted, generates from timestamp
 
-GMR_VERSION="0.4.8"
+GMR_VERSION="0.4.9"
 
 # ── Help & Version ─────────────────────────────────────────────────────
 MESSAGE_ONLY=false
@@ -31,7 +31,7 @@ Environment variables:
   GEMINI_API_KEY       Google Gemini API key
   ANTHROPIC_API_KEY    Anthropic Claude API key
   OPENAI_API_KEY       OpenAI API key
-  GMR_MAIN_BRANCH      Base branch (default: master)
+  GMR_MAIN_BRANCH      Base branch (default: auto-detect from origin/HEAD)
   GMR_GEMINI_MODEL     Gemini model (default: gemini-flash-latest)
   GMR_ANTHROPIC_MODEL  Claude model (default: claude-sonnet-4-20250514)
   GMR_OPENAI_MODEL     OpenAI model (default: gpt-4o-mini)
@@ -50,7 +50,37 @@ EOF
 esac
 
 # ── Config ──────────────────────────────────────────────────────────────
-MAIN_BRANCH="${GMR_MAIN_BRANCH:-master}"
+detect_main_branch() {
+  local remote_head
+  local head_branch
+
+  # Respect explicit override first.
+  if [[ -n "${GMR_MAIN_BRANCH:-}" ]]; then
+    echo "${GMR_MAIN_BRANCH}"
+    return
+  fi
+
+  # Prefer the default branch from origin/HEAD.
+  remote_head=$(git symbolic-ref -q refs/remotes/origin/HEAD 2>/dev/null || true)
+  if [[ -n "$remote_head" ]]; then
+    head_branch="${remote_head#refs/remotes/origin/}"
+    if [[ -n "$head_branch" ]]; then
+      echo "$head_branch"
+      return
+    fi
+  fi
+
+  # Fallbacks for repos without origin/HEAD configured.
+  if git show-ref --verify --quiet refs/heads/main; then
+    echo "main"
+  elif git show-ref --verify --quiet refs/heads/master; then
+    echo "master"
+  else
+    echo "master"
+  fi
+}
+
+MAIN_BRANCH="$(detect_main_branch)"
 GEMINI_MODEL="${GMR_GEMINI_MODEL:-gemini-flash-latest}"
 ANTHROPIC_MODEL="${GMR_ANTHROPIC_MODEL:-claude-sonnet-4-20250514}"
 OPENAI_MODEL="${GMR_OPENAI_MODEL:-gpt-4o-mini}"

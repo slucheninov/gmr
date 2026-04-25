@@ -19,7 +19,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Configuration (env vars)
 
-- `GMR_MAIN_BRANCH` — base branch (default: `master`)
+- `GMR_MAIN_BRANCH` — base branch (default: auto-detected from `origin/HEAD`, fallback: `main`/`master`)
 - `GMR_GEMINI_MODEL` — Gemini model (default: `gemini-flash-latest`)
 - `GMR_ANTHROPIC_MODEL` — Anthropic model (default: `claude-sonnet-4-20250514`)
 - `GMR_OPENAI_MODEL` — OpenAI model (default: `gpt-4o-mini`)

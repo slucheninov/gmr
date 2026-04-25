@@ -76,7 +76,7 @@ gmr -m               # generate commit message only
 | `GEMINI_API_KEY` | API ключ Google Gemini | — |
 | `ANTHROPIC_API_KEY` | API ключ Anthropic Claude | — |
 | `OPENAI_API_KEY` | API ключ OpenAI | — |
-| `GMR_MAIN_BRANCH` | Основна гілка | `master` |
+| `GMR_MAIN_BRANCH` | Основна гілка | auto (`origin/HEAD`, fallback: `main`/`master`) |
 | `GMR_GEMINI_MODEL` | Модель Gemini | `gemini-flash-latest` |
 | `GMR_ANTHROPIC_MODEL` | Модель Claude | `claude-sonnet-4-20250514` |
 | `GMR_OPENAI_MODEL` | Модель OpenAI | `gpt-4o-mini` |
