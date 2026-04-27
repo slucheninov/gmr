@@ -61,15 +61,18 @@ sudo install -m 0755 gmr /usr/local/bin/gmr
 ## Usage
 
 ```bash
-gmr [branch-name]    # full flow: commit + MR/PR
-gmr -m               # generate commit message only
-gmr -h               # help
-gmr -v               # version
+gmr [options] [branch-name]   # full flow: commit + MR/PR
+gmr -m                          # generate commit message only
+gmr -s                          # after MR/PR, stay on the feature branch
+gmr -h                          # help
+gmr -v                          # version
 ```
 
 Якщо `branch-name` не вказано, генерується автоматично: `auto/YYYYMMDD-HHMMSS`.
 
 З прапорцем `-m` (`--message`) скрипт лише генерує commit message через AI (виводиться у `stdout`), без створення гілки, коміту чи MR/PR. Працює з будь-якої гілки.
+
+З прапорцем `-s` (`--stay`) після успішного створення MR/PR ти залишаєшся на feature-гілці; за замовчуванням gmr переключається на основну гілку і робить `git pull`.
 
 ## How it works
 
@@ -80,7 +83,7 @@ gmr -v               # version
 5. Створює гілку, комітить, відкриває MR (`glab`) або PR (`gh`).
 6. Для GitLab передає в `glab` явні `title` і `description`: використовує body commit message, а якщо його немає - генерує короткий `## Summary` із заголовка коміту.
 7. Для GitHub - вмикає auto-merge зі squash (gracefully degrade, якщо репо це забороняє).
-8. Повертається на основну гілку, виконує `git pull`.
+8. За замовчуванням повертається на основну гілку і виконує `git pull`. З `-s` / `--stay` залишається на feature-гілці.
 
 ## Configuration
 

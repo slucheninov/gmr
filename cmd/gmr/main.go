@@ -23,7 +23,7 @@ import (
 
 const helpText = `gmr — Git Merge Request / Pull Request automation
 
-Usage: gmr [-m] [branch-name]
+Usage: gmr [options] [branch-name]
 
 Creates a branch, generates an AI commit message (Gemini → Claude → OpenAI → manual),
 commits staged changes, and opens a GitLab MR or GitHub PR (auto-detected).
@@ -33,6 +33,7 @@ If branch-name is omitted, generates: auto/YYYYMMDD-HHMMSS
 Options:
   -h, --help      Show this help
   -m, --message   Generate commit message only (no commit, branch, or MR/PR)
+  -s, --stay      After creating MR/PR, stay on the feature branch (do not switch to main)
   -v, --version   Show version
 
 Environment variables:
@@ -47,37 +48,66 @@ Environment variables:
 `
 
 func main() {
-	args := os.Args[1:]
-	messageOnly := false
-	branchArg := ""
-
-	for _, a := range args {
-		switch a {
-		case "-h", "--help":
+	opts, err := parseGmrArgs(os.Args[1:])
+	if err != nil {
+		if errors.Is(err, errShowHelp) {
 			fmt.Print(helpText)
 			return
-		case "-v", "--version":
+		}
+		if errors.Is(err, errShowVersion) {
 			fmt.Printf("gmr %s\n", version.Version)
 			return
-		case "-m", "--message":
-			messageOnly = true
-		default:
-			if strings.HasPrefix(a, "-") {
-				ui.Errf("unknown option: %s", a)
-			}
-			if branchArg != "" {
-				ui.Errf("unexpected argument: %s", a)
-			}
-			branchArg = a
 		}
+		ui.Errf("%s", err.Error())
+		return
 	}
 
-	if err := run(messageOnly, branchArg); err != nil {
+	if err := run(opts); err != nil {
 		ui.Errf("%s", err.Error())
 	}
 }
 
-func run(messageOnly bool, branchArg string) error {
+// errShowHelp and errShowVersion are handled in main, not as failures.
+var (
+	errShowHelp    = errors.New("show help")
+	errShowVersion = errors.New("show version")
+)
+
+type gmrOptions struct {
+	messageOnly  bool
+	stayOnBranch bool
+	branchArg    string
+}
+
+func parseGmrArgs(args []string) (gmrOptions, error) {
+	var o gmrOptions
+	for _, a := range args {
+		switch a {
+		case "-h", "--help":
+			return gmrOptions{}, errShowHelp
+		case "-v", "--version":
+			return gmrOptions{}, errShowVersion
+		case "-m", "--message":
+			o.messageOnly = true
+		case "-s", "--stay":
+			o.stayOnBranch = true
+		default:
+			if strings.HasPrefix(a, "-") {
+				return gmrOptions{}, fmt.Errorf("unknown option: %s", a)
+			}
+			if o.branchArg != "" {
+				return gmrOptions{}, fmt.Errorf("unexpected argument: %s", a)
+			}
+			o.branchArg = a
+		}
+	}
+	return o, nil
+}
+
+func run(opts gmrOptions) error {
+	messageOnly := opts.messageOnly
+	stayOnBranch := opts.stayOnBranch
+	branchArg := opts.branchArg
 	if os.Getenv("GEMINI_API_KEY") == "" && os.Getenv("ANTHROPIC_API_KEY") == "" && os.Getenv("OPENAI_API_KEY") == "" {
 		return errors.New("no API key set. Export GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY")
 	}
@@ -173,21 +203,28 @@ func run(messageOnly bool, branchArg string) error {
 		return err
 	}
 
-	cleanup := func() {
+	restoreToMain := func() {
 		current, _ := git.CurrentBranch(r)
 		if current != mainBranch {
 			ui.Warn("Returning to %s...", mainBranch)
 			_ = git.Checkout(r, mainBranch, false)
 		}
 	}
-	defer cleanup()
+
+	var completedOK bool
+	defer func() {
+		if completedOK && stayOnBranch {
+			return
+		}
+		restoreToMain()
+	}()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sigCh)
 	go func() {
 		if _, ok := <-sigCh; ok {
-			cleanup()
+			restoreToMain()
 			os.Exit(130)
 		}
 	}()
@@ -244,6 +281,16 @@ func run(messageOnly bool, branchArg string) error {
 		}
 	}
 
+	if stayOnBranch {
+		if plat == platform.GitLab {
+			ui.OK("Done! MR created, you are on %s", branchName)
+		} else {
+			ui.OK("Done! PR created, you are on %s", branchName)
+		}
+		completedOK = true
+		return nil
+	}
+
 	ui.Log("Switching back to %s...", mainBranch)
 	if err := git.Checkout(r, mainBranch, false); err != nil {
 		return err
@@ -257,6 +304,7 @@ func run(messageOnly bool, branchArg string) error {
 	} else {
 		ui.OK("Done! PR created, you are on %s", mainBranch)
 	}
+	completedOK = true
 	return nil
 }
 
