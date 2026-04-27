@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.7.0] - 2026-04-27
+## [0.6.1] - 2026-04-27
 
 ### Added
 - `--stay` / `-s`: after creating an MR/PR, stay on the feature branch instead of checking out the base branch and running `git pull`. Interrupt (`SIGINT`/`SIGTERM`) still switches back to the base branch to leave the worktree in a known state on partial runs.
