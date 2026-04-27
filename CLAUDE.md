@@ -21,8 +21,9 @@ internal/version/           # Version constant (override via -ldflags)
 ## Usage
 
 ```bash
-gmr [branch-name]   # branch-name defaults to auto/YYYYMMDD-HHMMSS
+gmr [options] [branch-name]   # branch-name defaults to auto/YYYYMMDD-HHMMSS
 gmr -m              # generate commit message only (prints to stdout)
+gmr -s              # after MR/PR, stay on the feature branch (no checkout to main)
 gmr -h | -v
 ```
 
