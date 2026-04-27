@@ -18,7 +18,7 @@ CLI-утиліта на Go, яка автоматизує створення Mer
 # linux-amd64 (заміни на linux-arm64 / darwin-amd64 / darwin-arm64 за потреби)
 VERSION=$(curl -fsSL https://api.github.com/repos/slucheninov/gmr/releases/latest | jq -r .tag_name)
 curl -L -o gmr.tar.gz \
-  "https://github.com/slucheninov/gmr/releases/download/${VERSION}/gmr-${VERSION}-linux-amd64.tar.gz"
+  "https://github.com/slucheninov/gmr/releases/download/${VERSION}/gmr-${VERSION}-darwin-arm64.tar.gz"
 tar -xzf gmr.tar.gz
 sudo install -m 0755 gmr /usr/local/bin/gmr
 gmr --version
