@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.2] - 2026-05-01
+
+### Fixed
+- `gmr` now treats untracked files and directories as changes, so repositories with only new files no longer fail with `no changes to commit`.
+
 ## [0.6.1] - 2026-04-27
 
 ### Added
