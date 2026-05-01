@@ -37,14 +37,18 @@ Options:
   -v, --version   Show version
 
 Environment variables:
-  GEMINI_API_KEY       Google Gemini API key
-  ANTHROPIC_API_KEY    Anthropic Claude API key
-  OPENAI_API_KEY       OpenAI API key
-  GMR_MAIN_BRANCH      Base branch (default: auto-detect from origin/HEAD)
-  GMR_GEMINI_MODEL     Gemini model (default: gemini-flash-latest)
-  GMR_ANTHROPIC_MODEL  Claude model (default: claude-sonnet-4-20250514)
-  GMR_OPENAI_MODEL     OpenAI model (default: gpt-4o-mini)
-  GMR_MAX_DIFF         Max diff lines for AI (default: 500)
+  GEMINI_API_KEY      Google Gemini API key
+  ANTHROPIC_API_KEY   Anthropic Claude API key
+  OPENAI_API_KEY      OpenAI API key
+  GEMINI_MODEL        Gemini model (default: gemini-flash-latest)
+  ANTHROPIC_MODEL     Claude model (default: claude-sonnet-4-20250514)
+  OPENAI_MODEL        OpenAI model (default: gpt-4o-mini)
+  GEMINI_BASE_URL     Gemini API base URL override
+  ANTHROPIC_BASE_URL  Claude API base URL override
+  OPENAI_BASE_URL     OpenAI-compatible API base URL override (e.g. LiteLLM)
+  GMR_PROVIDERS       AI provider order, comma-separated (default: gemini,claude,openai)
+  GMR_MAIN_BRANCH     Base branch (default: auto-detect from origin/HEAD)
+  GMR_MAX_DIFF        Max diff lines for AI (default: 500)
 `
 
 func main() {
@@ -121,10 +125,10 @@ func run(opts gmrOptions) error {
 	mainBranch := git.DetectMainBranch(r)
 
 	var (
-		plat        platform.Kind
-		remoteURL   string
-		branchName  string
-		gitlabPath  string
+		plat       platform.Kind
+		remoteURL  string
+		branchName string
+		gitlabPath string
 	)
 
 	if !messageOnly {
@@ -334,11 +338,7 @@ func generateCommitMessage(r git.Runner) (string, error) {
 		diffContent += fmt.Sprintf("\n... (diff truncated at %d lines)", maxDiffLines)
 	}
 
-	providers := []ai.Provider{
-		ai.NewGemini(os.Getenv("GEMINI_API_KEY"), os.Getenv("GMR_GEMINI_MODEL")),
-		ai.NewClaude(os.Getenv("ANTHROPIC_API_KEY"), os.Getenv("GMR_ANTHROPIC_MODEL")),
-		ai.NewOpenAI(os.Getenv("OPENAI_API_KEY"), os.Getenv("GMR_OPENAI_MODEL")),
-	}
+	providers := buildProviders(os.Getenv("GMR_PROVIDERS"))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -382,6 +382,41 @@ func generateCommitMessage(r git.Runner) (string, error) {
 		return strings.TrimSpace(edited), nil
 	}
 	return msg, nil
+}
+
+var defaultProviderOrder = []string{"gemini", "claude", "openai"}
+
+func buildProviders(order string) []ai.Provider {
+	names := defaultProviderOrder
+	if order = strings.TrimSpace(order); order != "" {
+		names = nil
+		for _, n := range strings.Split(order, ",") {
+			if n = strings.TrimSpace(strings.ToLower(n)); n != "" {
+				names = append(names, n)
+			}
+		}
+	}
+	var providers []ai.Provider
+	for _, n := range names {
+		if p := makeProvider(n); p != nil {
+			providers = append(providers, p)
+		}
+	}
+	return providers
+}
+
+func makeProvider(name string) ai.Provider {
+	switch name {
+	case "gemini":
+		return ai.NewGeminiWithBaseURL(os.Getenv("GEMINI_API_KEY"), os.Getenv("GEMINI_MODEL"), os.Getenv("GEMINI_BASE_URL"))
+	case "claude", "anthropic":
+		return ai.NewClaudeWithBaseURL(os.Getenv("ANTHROPIC_API_KEY"), os.Getenv("ANTHROPIC_MODEL"), os.Getenv("ANTHROPIC_BASE_URL"))
+	case "openai":
+		return ai.NewOpenAIWithBaseURL(os.Getenv("OPENAI_API_KEY"), os.Getenv("OPENAI_MODEL"), os.Getenv("OPENAI_BASE_URL"))
+	default:
+		ui.Warn("Unknown provider %q, skipping", name)
+		return nil
+	}
 }
 
 func editInEditor(initial string) (string, error) {

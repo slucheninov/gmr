@@ -44,10 +44,14 @@ go vet ./...
 
 ## Configuration (env vars)
 
+- `GEMINI_MODEL` — Gemini model (default: `gemini-flash-latest`)
+- `ANTHROPIC_MODEL` — Anthropic model (default: `claude-sonnet-4-20250514`)
+- `OPENAI_MODEL` — OpenAI model (default: `gpt-4o-mini`)
+- `GEMINI_BASE_URL` — Gemini API base URL override
+- `ANTHROPIC_BASE_URL` — Anthropic API base URL override
+- `OPENAI_BASE_URL` — OpenAI-compatible API base URL override (e.g. LiteLLM)
+- `GMR_PROVIDERS` — AI provider fallback order, comma-separated (default: `gemini,claude,openai`)
 - `GMR_MAIN_BRANCH` — base branch (default: auto-detected from `origin/HEAD`, fallback: `main`/`master`)
-- `GMR_GEMINI_MODEL` — Gemini model (default: `gemini-flash-latest`)
-- `GMR_ANTHROPIC_MODEL` — Claude model (default: `claude-sonnet-4-20250514`)
-- `GMR_OPENAI_MODEL` — OpenAI model (default: `gpt-4o-mini`)
 - `GMR_MAX_DIFF` — max diff lines sent to API (default: `500`)
 - `EDITOR` — editor for the `e(edit)` choice (default: `vim`)
 - `NO_COLOR` — disable ANSI colors

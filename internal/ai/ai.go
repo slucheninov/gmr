@@ -11,8 +11,8 @@ import (
 // CommitPrompt is the instruction prepended to every diff sent to a provider.
 const CommitPrompt = `Generate a git commit message for this diff using Conventional Commits format.
 Rules:
-- Format: scope: description
-- Scope is optional, use only if obvious from the diff
+- Format: "type: description" or "scope: description"
+- NEVER use parentheses in the title (no "feat(x):" or "fix(y):")
 - Description: imperative mood, lowercase, no period, max 72 chars
 - If changes are significant, add a body after a blank line (max 3 bullet points)
 - Reply ONLY with the commit message, no markdown, no explanation

@@ -121,6 +121,40 @@ func TestOpenAI_Success(t *testing.T) {
 	}
 }
 
+func TestOpenAI_BaseURLOverrideTrimsTrailingSlash(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"fix: proxy url"},"finish_reason":"stop"}]}`))
+	}))
+	defer srv.Close()
+	prev := HTTPClient
+	HTTPClient = srv.Client()
+	defer func() { HTTPClient = prev }()
+
+	o := NewOpenAIWithBaseURL("k", "litellm-model", srv.URL+"/")
+	got, err := o.Generate(context.Background(), "diff")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "fix: proxy url" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestBaseURLOverrideWhitespaceUsesDefaults(t *testing.T) {
+	if got := NewGeminiWithBaseURL("k", "", "  ").BaseURL; got != "https://generativelanguage.googleapis.com/v1beta" {
+		t.Errorf("gemini base URL = %q", got)
+	}
+	if got := NewClaudeWithBaseURL("k", "", "  ").BaseURL; got != "https://api.anthropic.com" {
+		t.Errorf("claude base URL = %q", got)
+	}
+	if got := NewOpenAIWithBaseURL("k", "", "  ").BaseURL; got != "https://api.openai.com" {
+		t.Errorf("openai base URL = %q", got)
+	}
+}
+
 func TestProvidersImplementInterface(t *testing.T) {
 	var _ Provider = NewGemini("", "")
 	var _ Provider = NewClaude("", "")

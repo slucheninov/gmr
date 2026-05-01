@@ -92,10 +92,14 @@ gmr -v                          # version
 | `GEMINI_API_KEY` | API ключ Google Gemini | - |
 | `ANTHROPIC_API_KEY` | API ключ Anthropic Claude | - |
 | `OPENAI_API_KEY` | API ключ OpenAI | - |
+| `GEMINI_MODEL` | Модель Gemini | `gemini-flash-latest` |
+| `ANTHROPIC_MODEL` | Модель Claude | `claude-sonnet-4-20250514` |
+| `OPENAI_MODEL` | Модель OpenAI | `gpt-4o-mini` |
+| `GEMINI_BASE_URL` | Base URL для Gemini API override | `https://generativelanguage.googleapis.com/v1beta` |
+| `ANTHROPIC_BASE_URL` | Base URL для Claude API override | `https://api.anthropic.com` |
+| `OPENAI_BASE_URL` | Base URL для OpenAI-compatible API override (наприклад LiteLLM) | `https://api.openai.com` |
+| `GMR_PROVIDERS` | Порядок AI-провайдерів (comma-separated) | `gemini,claude,openai` |
 | `GMR_MAIN_BRANCH` | Основна гілка | auto (`origin/HEAD`, fallback: `main`/`master`) |
-| `GMR_GEMINI_MODEL` | Модель Gemini | `gemini-flash-latest` |
-| `GMR_ANTHROPIC_MODEL` | Модель Claude | `claude-sonnet-4-20250514` |
-| `GMR_OPENAI_MODEL` | Модель OpenAI | `gpt-4o-mini` |
 | `GMR_MAX_DIFF` | Макс. рядків diff для AI | `500` |
 | `EDITOR` | Редактор для режиму `e(edit)` | `vim` |
 | `NO_COLOR` | Вимкнути ANSI кольори у виводі | - |

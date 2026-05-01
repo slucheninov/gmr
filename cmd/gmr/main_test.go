@@ -2,15 +2,16 @@ package main
 
 import (
 	"errors"
+	"strings"
 	"testing"
 )
 
 func TestParseGmrArgs(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name   string
-		args   []string
-		want   gmrOptions
+		name    string
+		args    []string
+		want    gmrOptions
 		wantErr error
 	}{
 		{
@@ -70,6 +71,37 @@ func TestParseGmrArgs(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Fatalf("got %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildProviders(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		order string
+		want  string
+	}{
+		{"", "Gemini,Claude,OpenAI"},
+		{"openai", "OpenAI"},
+		{"claude,openai", "Claude,OpenAI"},
+		{"openai,gemini", "OpenAI,Gemini"},
+		{" OpenAI , Claude ", "OpenAI,Claude"},
+		{"anthropic", "Claude"},
+		{"bogus,openai", "OpenAI"},
+		{"bogus", ""},
+	}
+	for _, tt := range tests {
+		t.Run("order="+tt.order, func(t *testing.T) {
+			t.Parallel()
+			ps := buildProviders(tt.order)
+			var ns []string
+			for _, p := range ps {
+				ns = append(ns, p.Name())
+			}
+			got := strings.Join(ns, ",")
+			if got != tt.want {
+				t.Errorf("buildProviders(%q) = %q, want %q", tt.order, got, tt.want)
 			}
 		})
 	}

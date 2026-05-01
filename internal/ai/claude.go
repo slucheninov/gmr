@@ -21,10 +21,19 @@ type Claude struct {
 
 // NewClaude builds a Claude provider; if model is empty, a sane default is used.
 func NewClaude(apiKey, model string) *Claude {
+	return NewClaudeWithBaseURL(apiKey, model, "")
+}
+
+// NewClaudeWithBaseURL builds a Claude provider with an optional API base URL override.
+func NewClaudeWithBaseURL(apiKey, model, baseURL string) *Claude {
 	if model == "" {
 		model = "claude-sonnet-4-20250514"
 	}
-	return &Claude{APIKey: apiKey, Model: model, BaseURL: "https://api.anthropic.com"}
+	baseURL = normalizeBaseURL(baseURL)
+	if baseURL == "" {
+		baseURL = "https://api.anthropic.com"
+	}
+	return &Claude{APIKey: apiKey, Model: model, BaseURL: baseURL}
 }
 
 // Name implements Provider.
@@ -110,4 +119,8 @@ func firstLine(s string) string {
 		return strings.TrimSpace(s[:i])
 	}
 	return strings.TrimSpace(s)
+}
+
+func normalizeBaseURL(baseURL string) string {
+	return strings.TrimRight(strings.TrimSpace(baseURL), "/")
 }

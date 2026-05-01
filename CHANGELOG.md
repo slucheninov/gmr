@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.6.3] - 2026-05-01
+
+### Added
+- AI provider settings now use ecosystem-standard env var names: `{PROVIDER}_MODEL` and `{PROVIDER}_BASE_URL` (e.g. `OPENAI_BASE_URL`, `ANTHROPIC_MODEL`), enabling OpenAI-compatible proxies such as LiteLLM. Old `GMR_GEMINI_MODEL`, `GMR_ANTHROPIC_MODEL`, `GMR_OPENAI_MODEL` env vars are replaced.
+- `GMR_PROVIDERS` env var to configure AI provider fallback order (e.g. `openai,claude`). Default: `gemini,claude,openai`. Accepts aliases: `anthropic` = `claude`.
+
 ## [0.6.2] - 2026-05-01
 
 ### Fixed
