@@ -82,8 +82,7 @@ func TestHasChanges(t *testing.T) {
 		out string
 		err error
 	}{
-		"diff --quiet":          {err: errors.New("changes")},
-		"diff --cached --quiet": {out: ""},
+		"status --porcelain": {out: " M README.md"},
 	}}
 	yes, err := HasChanges(r)
 	if err != nil || !yes {
@@ -94,8 +93,18 @@ func TestHasChanges(t *testing.T) {
 		out string
 		err error
 	}{
-		"diff --quiet":          {out: ""},
-		"diff --cached --quiet": {out: ""},
+		"status --porcelain": {out: "?? examples/docker/etcd-cluster/"},
+	}}
+	yes, err = HasChanges(r)
+	if err != nil || !yes {
+		t.Errorf("expected untracked changes detected; got yes=%v err=%v", yes, err)
+	}
+
+	r = &fakeRunner{responses: map[string]struct {
+		out string
+		err error
+	}{
+		"status --porcelain": {out: ""},
 	}}
 	yes, err = HasChanges(r)
 	if err != nil || yes {

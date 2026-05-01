@@ -62,15 +62,13 @@ func RemoteURL(r Runner, remote string) (string, error) {
 	return r.Run("remote", "get-url", remote)
 }
 
-// HasChanges reports whether there are staged or unstaged changes.
+// HasChanges reports whether there are staged, unstaged, or untracked changes.
 func HasChanges(r Runner) (bool, error) {
-	if _, err := r.Run("diff", "--quiet"); err != nil {
-		return true, nil
+	out, err := r.Run("status", "--porcelain")
+	if err != nil {
+		return false, err
 	}
-	if _, err := r.Run("diff", "--cached", "--quiet"); err != nil {
-		return true, nil
-	}
-	return false, nil
+	return out != "", nil
 }
 
 // StageAll runs `git add -A`.
