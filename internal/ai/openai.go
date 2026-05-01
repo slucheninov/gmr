@@ -21,10 +21,19 @@ type OpenAI struct {
 
 // NewOpenAI builds an OpenAI provider; if model is empty, a sane default is used.
 func NewOpenAI(apiKey, model string) *OpenAI {
+	return NewOpenAIWithBaseURL(apiKey, model, "")
+}
+
+// NewOpenAIWithBaseURL builds an OpenAI provider with an optional API base URL override.
+func NewOpenAIWithBaseURL(apiKey, model, baseURL string) *OpenAI {
 	if model == "" {
 		model = "gpt-4o-mini"
 	}
-	return &OpenAI{APIKey: apiKey, Model: model, BaseURL: "https://api.openai.com"}
+	baseURL = normalizeBaseURL(baseURL)
+	if baseURL == "" {
+		baseURL = "https://api.openai.com"
+	}
+	return &OpenAI{APIKey: apiKey, Model: model, BaseURL: baseURL}
 }
 
 // Name implements Provider.

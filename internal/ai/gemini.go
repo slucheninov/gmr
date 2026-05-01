@@ -21,10 +21,19 @@ type Gemini struct {
 
 // NewGemini builds a Gemini provider; if model is empty, a sane default is used.
 func NewGemini(apiKey, model string) *Gemini {
+	return NewGeminiWithBaseURL(apiKey, model, "")
+}
+
+// NewGeminiWithBaseURL builds a Gemini provider with an optional API base URL override.
+func NewGeminiWithBaseURL(apiKey, model, baseURL string) *Gemini {
 	if model == "" {
 		model = "gemini-flash-latest"
 	}
-	return &Gemini{APIKey: apiKey, Model: model, BaseURL: "https://generativelanguage.googleapis.com/v1beta"}
+	baseURL = normalizeBaseURL(baseURL)
+	if baseURL == "" {
+		baseURL = "https://generativelanguage.googleapis.com/v1beta"
+	}
+	return &Gemini{APIKey: apiKey, Model: model, BaseURL: baseURL}
 }
 
 // Name implements Provider.
