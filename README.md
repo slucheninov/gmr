@@ -15,10 +15,11 @@ CLI-утиліта на Go, яка автоматизує створення Mer
 Завантажити архів для вашої ОС / архітектури з [GitHub Releases](https://github.com/slucheninov/gmr/releases/latest):
 
 ```bash
-# linux-amd64 (заміни на linux-arm64 / darwin-amd64 / darwin-arm64 за потреби)
 VERSION=$(curl -fsSL https://api.github.com/repos/slucheninov/gmr/releases/latest | jq -r .tag_name)
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 curl -L -o gmr.tar.gz \
-  "https://github.com/slucheninov/gmr/releases/download/${VERSION}/gmr-${VERSION}-darwin-arm64.tar.gz"
+  "https://github.com/slucheninov/gmr/releases/download/${VERSION}/gmr-${VERSION}-${OS}-${ARCH}.tar.gz"
 tar -xzf gmr.tar.gz
 sudo install -m 0755 gmr /usr/local/bin/gmr
 gmr --version
@@ -44,6 +45,36 @@ go install github.com/slucheninov/gmr/cmd/gmr@latest
 ```bash
 git clone https://github.com/slucheninov/gmr.git
 cd gmr
+go build -o gmr ./cmd/gmr
+sudo install -m 0755 gmr /usr/local/bin/gmr
+```
+
+## Update
+
+### Pre-built binary
+
+```bash
+VERSION=$(curl -fsSL https://api.github.com/repos/slucheninov/gmr/releases/latest | jq -r .tag_name)
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+curl -L -o gmr.tar.gz \
+  "https://github.com/slucheninov/gmr/releases/download/${VERSION}/gmr-${VERSION}-${OS}-${ARCH}.tar.gz"
+tar -xzf gmr.tar.gz
+sudo install -m 0755 gmr /usr/local/bin/gmr
+gmr --version
+```
+
+### Через `go install`
+
+```bash
+go install github.com/slucheninov/gmr/cmd/gmr@latest
+```
+
+### З вихідного коду
+
+```bash
+cd gmr
+git pull
 go build -o gmr ./cmd/gmr
 sudo install -m 0755 gmr /usr/local/bin/gmr
 ```
