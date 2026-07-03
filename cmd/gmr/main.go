@@ -28,7 +28,8 @@ Usage: gmr [options] [branch-name]
 Creates a branch, generates an AI commit message (Gemini → Claude → OpenAI → manual),
 commits staged changes, and opens a GitLab MR or GitHub PR (auto-detected).
 
-If branch-name is omitted, generates: auto/YYYYMMDD-HHMMSS
+If branch-name is omitted, derives name from commit title (e.g. fix-update);
+falls back to auto-YYYYMMDD-HHMMSS if no usable words or all names taken.
 
 Options:
   -h, --help      Show this help
@@ -180,11 +181,8 @@ func run(opts gmrOptions) error {
 		return errors.New("no changes to commit. Make some changes first")
 	}
 
-	if !messageOnly {
+	if !messageOnly && branchArg != "" {
 		branchName = branchArg
-		if branchName == "" {
-			branchName = "auto/" + time.Now().Format("20060102-150405")
-		}
 		ui.Log("Branch: %s", branchName)
 	}
 
@@ -200,6 +198,28 @@ func run(opts gmrOptions) error {
 		fmt.Println(commitMsg)
 		ui.OK("Commit message generated (not committed)")
 		return nil
+	}
+
+	if branchName == "" {
+		base := commit.BranchName(commit.Title(commitMsg))
+		if base == "" {
+			base = "auto-" + time.Now().Format("20060102-150405")
+		} else if git.BranchExists(r, base) {
+			resolved := false
+			for i := 2; i <= 100; i++ {
+				candidate := base + strconv.Itoa(i)
+				if !git.BranchExists(r, candidate) {
+					base = candidate
+					resolved = true
+					break
+				}
+			}
+			if !resolved {
+				base = "auto-" + time.Now().Format("20060102-150405")
+			}
+		}
+		branchName = base
+		ui.Log("Branch: %s", branchName)
 	}
 
 	ui.Log("Creating branch '%s'...", branchName)

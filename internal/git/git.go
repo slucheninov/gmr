@@ -134,6 +134,15 @@ func Pull(r Runner) error {
 	return err
 }
 
+// BranchExists reports whether name exists locally or on origin.
+func BranchExists(r Runner, name string) bool {
+	if _, err := r.Run("rev-parse", "--verify", "--quiet", "refs/heads/"+name); err == nil {
+		return true
+	}
+	_, err := r.Run("rev-parse", "--verify", "--quiet", "refs/remotes/origin/"+name)
+	return err == nil
+}
+
 // LimitLines returns the first n lines of s; if s already has <= n lines it is
 // returned unchanged. The returned string keeps the original trailing newline
 // semantics of those n lines.

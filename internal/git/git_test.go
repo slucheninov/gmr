@@ -77,6 +77,43 @@ func TestDetectMainBranch_FallbackMaster(t *testing.T) {
 	}
 }
 
+func TestBranchExists(t *testing.T) {
+	// exists locally
+	r := &fakeRunner{responses: map[string]struct {
+		out string
+		err error
+	}{
+		"rev-parse --verify --quiet refs/heads/fix-detect": {out: "abc123"},
+	}}
+	if !BranchExists(r, "fix-detect") {
+		t.Error("expected branch to exist locally")
+	}
+
+	// exists on origin
+	r2 := &fakeRunner{responses: map[string]struct {
+		out string
+		err error
+	}{
+		"rev-parse --verify --quiet refs/heads/fix-detect":          {err: errors.New("not found")},
+		"rev-parse --verify --quiet refs/remotes/origin/fix-detect": {out: "def456"},
+	}}
+	if !BranchExists(r2, "fix-detect") {
+		t.Error("expected branch to exist on origin")
+	}
+
+	// does not exist
+	r3 := &fakeRunner{responses: map[string]struct {
+		out string
+		err error
+	}{
+		"rev-parse --verify --quiet refs/heads/fix-detect":          {err: errors.New("not found")},
+		"rev-parse --verify --quiet refs/remotes/origin/fix-detect": {err: errors.New("not found")},
+	}}
+	if BranchExists(r3, "fix-detect") {
+		t.Error("expected branch to not exist")
+	}
+}
+
 func TestHasChanges(t *testing.T) {
 	r := &fakeRunner{responses: map[string]struct {
 		out string
