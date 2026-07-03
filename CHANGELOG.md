@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.0] - 2026-07-03
+
+### Changed
+- Default branch name is now derived from the AI-generated commit title (e.g. `fix-detect`, `feat-add`). If the title produces no usable ASCII words, or if the derived name is already taken (locally or on origin), a numeric suffix is appended (`fix-detect2`, `fix-detect3`, …). If all suffixed names up to 100 are taken, falls back to `auto-YYYYMMDD-HHMMSS`.
+
 ## [0.6.3] - 2026-05-01
 
 ### Added

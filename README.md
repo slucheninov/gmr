@@ -99,7 +99,7 @@ gmr -h                          # help
 gmr -v                          # version
 ```
 
-Якщо `branch-name` не вказано, генерується автоматично: `auto/YYYYMMDD-HHMMSS`.
+Якщо `branch-name` не вказано, назва гілки виводиться з AI commit title (наприклад, `fix-detect`, `feat-add`). При колізії додається числовий суфікс (`fix-detect2`). Fallback: `auto-YYYYMMDD-HHMMSS`.
 
 З прапорцем `-m` (`--message`) скрипт лише генерує commit message через AI (виводиться у `stdout`), без створення гілки, коміту чи MR/PR. Працює з будь-якої гілки.
 
