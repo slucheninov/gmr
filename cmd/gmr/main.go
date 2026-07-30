@@ -25,8 +25,10 @@ const helpText = `gmr — Git Merge Request / Pull Request automation
 
 Usage: gmr [options] [branch-name]
 
-Creates a branch, generates an AI commit message (Gemini → Claude → OpenAI → manual),
-commits staged changes, and opens a GitLab MR or GitHub PR (auto-detected).
+From the base branch, creates a feature branch, generates an AI commit message
+(Gemini → Claude → OpenAI → manual), commits changes, and opens a GitLab MR or
+GitHub PR (auto-detected). From an existing feature branch, opens an MR/PR for
+its commits and stays on that branch.
 
 If branch-name is omitted, derives name from commit title (e.g. fix-update);
 falls back to auto-YYYYMMDD-HHMMSS if no usable words or all names taken.
@@ -113,9 +115,6 @@ func run(opts gmrOptions) error {
 	messageOnly := opts.messageOnly
 	stayOnBranch := opts.stayOnBranch
 	branchArg := opts.branchArg
-	if os.Getenv("GEMINI_API_KEY") == "" && os.Getenv("ANTHROPIC_API_KEY") == "" && os.Getenv("OPENAI_API_KEY") == "" {
-		return errors.New("no API key set. Export GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY")
-	}
 
 	r := git.NewRunner()
 
@@ -126,10 +125,11 @@ func run(opts gmrOptions) error {
 	mainBranch := git.DetectMainBranch(r)
 
 	var (
-		plat       platform.Kind
-		remoteURL  string
-		branchName string
-		gitlabPath string
+		plat           platform.Kind
+		remoteURL      string
+		branchName     string
+		gitlabPath     string
+		existingBranch bool
 	)
 
 	if !messageOnly {
@@ -168,8 +168,13 @@ func run(opts gmrOptions) error {
 		if err != nil {
 			return err
 		}
-		if current != mainBranch {
-			return fmt.Errorf("current branch is '%s', not '%s'. Switch to %s first", current, mainBranch, mainBranch)
+		branchName, existingBranch, err = resolveBranch(current, mainBranch, branchArg)
+		if err != nil {
+			return err
+		}
+		if existingBranch {
+			stayOnBranch = true
+			ui.Log("Using existing branch: %s", branchName)
 		}
 	}
 
@@ -177,21 +182,39 @@ func run(opts gmrOptions) error {
 	if err != nil {
 		return err
 	}
-	if !hasChanges {
+	if !hasChanges && !existingBranch {
 		return errors.New("no changes to commit. Make some changes first")
 	}
 
-	if !messageOnly && branchArg != "" {
+	if !messageOnly && branchArg != "" && !existingBranch {
 		branchName = branchArg
 		ui.Log("Branch: %s", branchName)
 	}
 
-	commitMsg, err := generateCommitMessage(r)
-	if err != nil {
-		return err
-	}
-	if commitMsg == "" {
-		return errors.New("commit message is empty. Aborted")
+	var commitMsg string
+	if hasChanges {
+		if !hasAPIKey() {
+			return errors.New("no API key set. Export GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY")
+		}
+		commitMsg, err = generateCommitMessage(r)
+		if err != nil {
+			return err
+		}
+		if commitMsg == "" {
+			return errors.New("commit message is empty. Aborted")
+		}
+	} else {
+		hasCommits, err := git.HasCommitsSince(r, mainBranch)
+		if err != nil {
+			return err
+		}
+		if !hasCommits {
+			return fmt.Errorf("branch %q has no commits ahead of %s", branchName, mainBranch)
+		}
+		commitMsg, err = git.LastCommitMessage(r)
+		if err != nil {
+			return err
+		}
 	}
 
 	if messageOnly {
@@ -222,12 +245,17 @@ func run(opts gmrOptions) error {
 		ui.Log("Branch: %s", branchName)
 	}
 
-	ui.Log("Creating branch '%s'...", branchName)
-	if err := git.Checkout(r, branchName, true); err != nil {
-		return err
+	if !existingBranch {
+		ui.Log("Creating branch '%s'...", branchName)
+		if err := git.Checkout(r, branchName, true); err != nil {
+			return err
+		}
 	}
 
 	restoreToMain := func() {
+		if existingBranch {
+			return
+		}
 		current, _ := git.CurrentBranch(r)
 		if current != mainBranch {
 			ui.Warn("Returning to %s...", mainBranch)
@@ -253,9 +281,11 @@ func run(opts gmrOptions) error {
 		}
 	}()
 
-	ui.Log("Committing...")
-	if err := git.Commit(r, commitMsg); err != nil {
-		return err
+	if hasChanges {
+		ui.Log("Committing...")
+		if err := git.Commit(r, commitMsg); err != nil {
+			return err
+		}
 	}
 
 	mrTitle := commit.Title(commitMsg)
@@ -330,6 +360,25 @@ func run(opts gmrOptions) error {
 	}
 	completedOK = true
 	return nil
+}
+
+func resolveBranch(current, mainBranch, branchArg string) (string, bool, error) {
+	if current == "" {
+		return "", false, errors.New("detached HEAD is not supported. Check out a branch first")
+	}
+	if current == mainBranch {
+		return branchArg, false, nil
+	}
+	if branchArg != "" && branchArg != current {
+		return "", false, fmt.Errorf("current branch is %q; branch-name %q can only be used from %s", current, branchArg, mainBranch)
+	}
+	return current, true, nil
+}
+
+func hasAPIKey() bool {
+	return os.Getenv("GEMINI_API_KEY") != "" ||
+		os.Getenv("ANTHROPIC_API_KEY") != "" ||
+		os.Getenv("OPENAI_API_KEY") != ""
 }
 
 func generateCommitMessage(r git.Runner) (string, error) {

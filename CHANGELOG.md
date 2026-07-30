@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.8.0] - 2026-07-30
+
+### Added
+- Running `gmr` from an existing non-base branch now creates an MR/PR directly from that branch. Already committed changes do not require an AI API key, no new branch or commit is created, and `gmr` stays on the feature branch after success, failure, or interruption.
+- Uncommitted changes on an existing feature branch are committed there before the MR/PR is created.
+
 ## [0.7.0] - 2026-07-03
 
 ### Changed
