@@ -68,8 +68,8 @@ func TestDetectMainBranch_FallbackMaster(t *testing.T) {
 		out string
 		err error
 	}{
-		"symbolic-ref -q refs/remotes/origin/HEAD":   {err: errors.New("no head")},
-		"show-ref --verify --quiet refs/heads/main":  {err: errors.New("no")},
+		"symbolic-ref -q refs/remotes/origin/HEAD":    {err: errors.New("no head")},
+		"show-ref --verify --quiet refs/heads/main":   {err: errors.New("no")},
 		"show-ref --verify --quiet refs/heads/master": {out: ""},
 	}}
 	if got := DetectMainBranch(r); got != "master" {
@@ -146,5 +146,53 @@ func TestHasChanges(t *testing.T) {
 	yes, err = HasChanges(r)
 	if err != nil || yes {
 		t.Errorf("expected no changes; got yes=%v err=%v", yes, err)
+	}
+}
+
+func TestHasCommitsSince(t *testing.T) {
+	tests := []struct {
+		name    string
+		out     string
+		runErr  error
+		want    bool
+		wantErr bool
+	}{
+		{name: "ahead", out: "2", want: true},
+		{name: "not ahead", out: "0"},
+		{name: "git error", runErr: errors.New("bad revision"), wantErr: true},
+		{name: "invalid count", out: "many", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &fakeRunner{responses: map[string]struct {
+				out string
+				err error
+			}{
+				"rev-list --count main..HEAD": {out: tt.out, err: tt.runErr},
+			}}
+			got, err := HasCommitsSince(r, "main")
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("HasCommitsSince() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("HasCommitsSince() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLastCommitMessage(t *testing.T) {
+	r := &fakeRunner{responses: map[string]struct {
+		out string
+		err error
+	}{
+		"log -1 --pretty=%B": {out: "feat: existing branch\n\nDetails"},
+	}}
+	got, err := LastCommitMessage(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "feat: existing branch\n\nDetails" {
+		t.Errorf("LastCommitMessage() = %q", got)
 	}
 }

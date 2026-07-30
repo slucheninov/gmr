@@ -106,3 +106,35 @@ func TestBuildProviders(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveBranch(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		current      string
+		main         string
+		arg          string
+		wantBranch   string
+		wantExisting bool
+		wantErr      bool
+	}{
+		{name: "base creates derived branch", current: "main", main: "main"},
+		{name: "base uses branch argument", current: "main", main: "main", arg: "feat/new", wantBranch: "feat/new"},
+		{name: "existing feature branch", current: "feat/existing", main: "main", wantBranch: "feat/existing", wantExisting: true},
+		{name: "matching argument on feature", current: "feat/existing", main: "main", arg: "feat/existing", wantBranch: "feat/existing", wantExisting: true},
+		{name: "conflicting argument", current: "feat/existing", main: "main", arg: "feat/other", wantErr: true},
+		{name: "detached head", current: "", main: "main", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			gotBranch, gotExisting, err := resolveBranch(tt.current, tt.main, tt.arg)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("resolveBranch() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if gotBranch != tt.wantBranch || gotExisting != tt.wantExisting {
+				t.Errorf("resolveBranch() = (%q, %v), want (%q, %v)", gotBranch, gotExisting, tt.wantBranch, tt.wantExisting)
+			}
+		})
+	}
+}

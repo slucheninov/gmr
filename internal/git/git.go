@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -69,6 +70,24 @@ func HasChanges(r Runner) (bool, error) {
 		return false, err
 	}
 	return out != "", nil
+}
+
+// HasCommitsSince reports whether HEAD contains commits that are not in base.
+func HasCommitsSince(r Runner, base string) (bool, error) {
+	out, err := r.Run("rev-list", "--count", base+"..HEAD")
+	if err != nil {
+		return false, err
+	}
+	count, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return false, fmt.Errorf("invalid commit count %q: %w", out, err)
+	}
+	return count > 0, nil
+}
+
+// LastCommitMessage returns the full message of the commit at HEAD.
+func LastCommitMessage(r Runner) (string, error) {
+	return r.Run("log", "-1", "--pretty=%B")
 }
 
 // StageAll runs `git add -A`.
