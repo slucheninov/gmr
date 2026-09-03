@@ -59,7 +59,7 @@ type claudeResp struct {
 }
 
 // Generate implements Provider.
-func (c *Claude) Generate(ctx context.Context, diff string) (string, error) {
+func (c *Claude) Generate(ctx context.Context, prompt string) (string, error) {
 	if c.APIKey == "" {
 		return "", ErrNoAPIKey
 	}
@@ -68,7 +68,7 @@ func (c *Claude) Generate(ctx context.Context, diff string) (string, error) {
 	body := claudeReq{
 		Model:     c.Model,
 		MaxTokens: 1024,
-		Messages:  []claudeMessage{{Role: "user", Content: CommitPrompt + diff}},
+		Messages:  []claudeMessage{{Role: "user", Content: prompt}},
 	}
 	buf, _ := json.Marshal(body)
 

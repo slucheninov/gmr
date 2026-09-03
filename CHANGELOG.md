@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.10.0] - 2026-09-03
+
+### Added
+- `GMR_COMMIT_STYLE` env var to choose the AI-generated commit message style: `human` (default, plain English sentence, no Conventional Commits tag) or `conventional` (the previous `type: description` format).
+- After creating an MR/PR, `gmr` now interactively asks `Stay on branch '<branch>' or switch to '<main>'? [s/M]:` unless `-s`/`--stay` is passed (which still skips the question and stays) or an existing feature branch forced staying. When stdin is not a TTY, `gmr` skips the question and switches to the base branch, preserving the previous default.
+- `gmr deploy`: cuts the next semver tag from the commits since the previous tag, with AI-chosen version bump (patch/minor/major) and AI-written release notes, then pushes the tag and creates a GitHub/GitLab Release. Supports `--patch`/`--minor`/`--major` to override the AI's bump choice, an explicit `<tag>` positional argument, `--no-release` to skip creating the platform release, and `-y`/`--yes` to skip confirmation. Falls back to a `patch` bump and the raw commit log as release notes when no AI provider is available.
+- `gmr status`: shows the most recent CI/CD runs (GitHub Actions / GitLab Pipelines) for the current branch and the latest tag (or an explicit ref), with per-job status for the newest run and a plain-language verdict line per ref. Exits with code `1` when the newest run of any inspected ref failed, so it's scriptable. Supports `--limit N` (1-20, default 3).
+- `GMR_TAG_PREFIX` env var: tag prefix `gmr deploy` uses when the repository has no existing semver tag yet (default: `v`; set to `""` for no prefix).
+- `deploy` and `status` are now reserved words as the first argument to `gmr` (routed to the new subcommands); a branch literally named `deploy` or `status` cannot be passed positionally to plain `gmr`.
+
+### Changed
+- Default commit message style is now plain human English instead of Conventional Commits. Set `GMR_COMMIT_STYLE=conventional` to restore the old format.
+- When using the human style, `gmr` defensively strips a leftover Conventional Commits type prefix (e.g. `feat:`, `fix(scope):`) from the AI-generated title and capitalizes the first letter, in case a provider ignores the prompt instructions.
+
 ## [0.9.0] - 2026-07-30
 
 ### Added

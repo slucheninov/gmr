@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -24,6 +25,8 @@ import (
 const helpText = `gmr — Git Merge Request / Pull Request automation
 
 Usage: gmr [options] [branch-name]
+       gmr deploy [options] [tag]
+       gmr status [options] [ref]
 
 From the base branch, creates a feature branch, generates an AI commit message
 (Gemini → Claude → OpenAI → manual), commits changes, and opens a GitLab MR or
@@ -33,10 +36,20 @@ its commits and stays on that branch.
 If branch-name is omitted, derives name from commit title (e.g. fix-update);
 falls back to auto-YYYYMMDD-HHMMSS if no usable words or all names taken.
 
+Commands:
+  deploy   Cut the next release tag (AI-chosen semver bump) and publish a
+           GitHub/GitLab Release. See 'gmr deploy -h'.
+  status   Show CI/CD pipeline status for the current branch and latest tag.
+           See 'gmr status -h'.
+
+  "deploy" and "status" are reserved as the first argument: a branch literally
+  named "deploy" or "status" cannot be passed positionally to plain 'gmr'.
+
 Options:
   -h, --help      Show this help
   -m, --message   Generate commit message only (no commit, branch, or MR/PR)
-  -s, --stay      After creating MR/PR, stay on the feature branch (do not switch to main)
+  -s, --stay      After creating MR/PR, stay on the feature branch (skips the
+                  stay-or-switch question; otherwise gmr asks)
   -v, --version   Show version
 
 Environment variables:
@@ -50,11 +63,25 @@ Environment variables:
   ANTHROPIC_BASE_URL  Claude API base URL override
   OPENAI_BASE_URL     OpenAI-compatible API base URL override (e.g. LiteLLM)
   GMR_PROVIDERS       AI provider order, comma-separated (default: gemini,claude,openai)
+  GMR_COMMIT_STYLE    Commit message style: human (default) or conventional
   GMR_MAIN_BRANCH     Base branch (default: auto-detect from origin/HEAD)
   GMR_MAX_DIFF        Max diff lines for AI (default: 500)
+  GMR_TAG_PREFIX      Tag prefix 'gmr deploy' uses when no tag exists yet
+                      (default: "v"; set to "" for no prefix)
 `
 
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "deploy":
+			deployMain(os.Args[2:])
+			return
+		case "status":
+			statusMain(os.Args[2:])
+			return
+		}
+	}
+
 	opts, err := parseGmrArgs(os.Args[1:])
 	if err != nil {
 		if errors.Is(err, errShowHelp) {
@@ -126,43 +153,18 @@ func run(opts gmrOptions) error {
 
 	var (
 		plat           platform.Kind
-		remoteURL      string
 		branchName     string
 		gitlabPath     string
 		existingBranch bool
 	)
 
 	if !messageOnly {
-		var err error
-		remoteURL, err = git.RemoteURL(r, "origin")
-		if err != nil {
-			return errors.New("no 'origin' remote found")
-		}
-		plat, err = platform.Detect(remoteURL)
+		pc, err := detectPlatform(r)
 		if err != nil {
 			return err
 		}
-		ui.Log("Platform: %s", plat)
-
-		if plat == platform.GitLab {
-			if _, err := exec.LookPath("glab"); err != nil {
-				return errors.New("glab is not installed. Install: https://gitlab.com/gitlab-org/cli")
-			}
-			if err := runQuiet("glab", "auth", "status"); err != nil {
-				return errors.New("glab is not authenticated for GitLab API. Run: glab auth login")
-			}
-			gitlabPath, err = platform.GitLabProjectPath(remoteURL)
-			if err != nil {
-				return err
-			}
-		} else {
-			if _, err := exec.LookPath("gh"); err != nil {
-				return errors.New("gh is not installed. Install: https://cli.github.com")
-			}
-			if err := runQuiet("gh", "auth", "status"); err != nil {
-				return errors.New("gh is not authenticated for GitHub API. Run: gh auth login")
-			}
-		}
+		plat = pc.kind
+		gitlabPath = pc.gitlabPath
 
 		current, err := git.CurrentBranch(r)
 		if err != nil {
@@ -335,6 +337,10 @@ func run(opts gmrOptions) error {
 		}
 	}
 
+	if !stayOnBranch && stdinIsTTY() {
+		stayOnBranch = askStayOnBranch(os.Stdin, branchName, mainBranch)
+	}
+
 	if stayOnBranch {
 		if plat == platform.GitLab {
 			ui.OK("Done! MR created, you are on %s", branchName)
@@ -362,6 +368,50 @@ func run(opts gmrOptions) error {
 	return nil
 }
 
+// platformCtx holds the detected hosting platform and the CLI details needed to talk to it.
+type platformCtx struct {
+	kind       platform.Kind
+	remoteURL  string
+	gitlabPath string
+}
+
+// detectPlatform resolves the origin remote, detects GitHub or GitLab, and
+// verifies the matching CLI is installed and authenticated.
+func detectPlatform(r git.Runner) (platformCtx, error) {
+	remoteURL, err := git.RemoteURL(r, "origin")
+	if err != nil {
+		return platformCtx{}, errors.New("no 'origin' remote found")
+	}
+	kind, err := platform.Detect(remoteURL)
+	if err != nil {
+		return platformCtx{}, err
+	}
+	ui.Log("Platform: %s", kind)
+
+	pc := platformCtx{kind: kind, remoteURL: remoteURL}
+
+	if kind == platform.GitLab {
+		if _, err := exec.LookPath("glab"); err != nil {
+			return platformCtx{}, errors.New("glab is not installed. Install: https://gitlab.com/gitlab-org/cli")
+		}
+		if err := runQuiet("glab", "auth", "status"); err != nil {
+			return platformCtx{}, errors.New("glab is not authenticated for GitLab API. Run: glab auth login")
+		}
+		pc.gitlabPath, err = platform.GitLabProjectPath(remoteURL)
+		if err != nil {
+			return platformCtx{}, err
+		}
+	} else {
+		if _, err := exec.LookPath("gh"); err != nil {
+			return platformCtx{}, errors.New("gh is not installed. Install: https://cli.github.com")
+		}
+		if err := runQuiet("gh", "auth", "status"); err != nil {
+			return platformCtx{}, errors.New("gh is not authenticated for GitHub API. Run: gh auth login")
+		}
+	}
+	return pc, nil
+}
+
 func resolveBranch(current, mainBranch, branchArg string) (string, bool, error) {
 	if current == "" {
 		return "", false, errors.New("detached HEAD is not supported. Check out a branch first")
@@ -375,6 +425,28 @@ func resolveBranch(current, mainBranch, branchArg string) (string, bool, error) 
 	return current, true, nil
 }
 
+// askStayOnBranch prompts the user to choose between staying on branch and
+// switching to mainBranch, reading the answer from in. Any of "s", "stay",
+// "y", "yes" (case-insensitive, trimmed) means stay; anything else, including
+// empty input, means switch to mainBranch.
+func askStayOnBranch(in io.Reader, branch, mainBranch string) bool {
+	fmt.Fprint(ui.Out, ui.Prompt(fmt.Sprintf("Stay on branch '%s' or switch to '%s'? [s/M]: ", branch, mainBranch)))
+	reader := bufio.NewReader(in)
+	line, _ := reader.ReadString('\n')
+	switch strings.ToLower(strings.TrimSpace(line)) {
+	case "s", "stay", "y", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
+// stdinIsTTY reports whether stdin is an interactive terminal.
+func stdinIsTTY() bool {
+	fi, err := os.Stdin.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+}
+
 func hasAPIKey() bool {
 	return os.Getenv("GEMINI_API_KEY") != "" ||
 		os.Getenv("ANTHROPIC_API_KEY") != "" ||
@@ -382,6 +454,10 @@ func hasAPIKey() bool {
 }
 
 func generateCommitMessage(r git.Runner) (string, error) {
+	commitStyle := os.Getenv("GMR_COMMIT_STYLE")
+	ai.SetStyle(commitStyle)
+	isHumanStyle := !strings.EqualFold(strings.TrimSpace(commitStyle), "conventional")
+
 	if err := git.StageAll(r); err != nil {
 		return "", err
 	}
@@ -394,38 +470,24 @@ func generateCommitMessage(r git.Runner) (string, error) {
 		return "", err
 	}
 
-	maxDiffLines := 500
-	if v := os.Getenv("GMR_MAX_DIFF"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			maxDiffLines = n
-		}
-	}
-
-	limited, truncated := git.LimitLines(full, maxDiffLines)
+	limit := maxDiffLines()
+	limited, truncated := git.LimitLines(full, limit)
 	diffContent := stat + "\n---\n" + limited
 	if truncated {
-		diffContent += fmt.Sprintf("\n... (diff truncated at %d lines)", maxDiffLines)
+		diffContent += fmt.Sprintf("\n... (diff truncated at %d lines)", limit)
 	}
 
-	providers := buildProviders(os.Getenv("GMR_PROVIDERS"))
-
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	var msg string
-	for _, p := range providers {
-		out, err := p.Generate(ctx, diffContent)
-		if err == nil && out != "" {
-			msg = out
-			break
-		}
-	}
+	msg := generate(ai.CommitPrompt + diffContent)
 
 	if msg == "" {
 		ui.Warn("All APIs unavailable. Enter commit message manually:")
 		reader := bufio.NewReader(os.Stdin)
 		line, _ := reader.ReadString('\n')
 		return strings.TrimSpace(line), nil
+	}
+
+	if isHumanStyle {
+		msg = commit.Humanize(msg)
 	}
 
 	fmt.Fprintln(ui.Out)
@@ -451,6 +513,35 @@ func generateCommitMessage(r git.Runner) (string, error) {
 		return strings.TrimSpace(edited), nil
 	}
 	return msg, nil
+}
+
+// maxDiffLines returns the GMR_MAX_DIFF line limit, defaulting to 500.
+func maxDiffLines() int {
+	n := 500
+	if v := os.Getenv("GMR_MAX_DIFF"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			n = parsed
+		}
+	}
+	return n
+}
+
+// generate runs prompt through the GMR_PROVIDERS fallback chain (60s timeout)
+// and returns the first non-empty result, or "" when every provider fails or
+// none is configured.
+func generate(prompt string) string {
+	providers := buildProviders(os.Getenv("GMR_PROVIDERS"))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	for _, p := range providers {
+		out, err := p.Generate(ctx, prompt)
+		if err == nil && out != "" {
+			return out
+		}
+	}
+	return ""
 }
 
 var defaultProviderOrder = []string{"gemini", "claude", "openai"}

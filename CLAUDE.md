@@ -1,19 +1,23 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code when working in this repository.
 
 ## Overview
 
-`gmr` (Git Merge Request) is a Go CLI that automates the merge request / pull request workflow. It stages changes, generates a commit message via AI (Gemini → Claude → OpenAI → manual), creates a branch, commits, and opens a GitLab MR or GitHub PR — all in one command. Platform is auto-detected from the `origin` remote URL.
+`gmr` (Git Merge Request) is a Go CLI that automates the merge request / pull request workflow. It stages changes, generates a commit message via AI (Gemini → Claude → OpenAI → manual), creates a branch, commits, and opens a GitLab MR or GitHub PR — all in one command. It also cuts release tags (`gmr deploy`) and reports CI status (`gmr status`). Platform is auto-detected from the `origin` remote URL.
 
 ## Layout
 
 ```
-cmd/gmr/main.go             # CLI entry point and orchestration
+cmd/gmr/main.go             # CLI entry point, subcommand dispatch, MR/PR flow
+cmd/gmr/deploy.go           # `gmr deploy` — next semver tag + release notes
+cmd/gmr/status.go           # `gmr status` — CI pipeline status + verdict
 internal/ai/                # Gemini / Claude / OpenAI providers (Provider interface)
 internal/git/               # git wrapper (Runner interface — testable)
 internal/platform/          # platform detection + GitLab project path parsing
 internal/commit/            # commit-message helpers (title, body, MR description)
+internal/release/           # semver parsing, next-tag calculation, AI reply parsing
+internal/ci/                # gh / glab pipeline status (Runner interface — testable)
 internal/ui/                # logging + ANSI colors (honors NO_COLOR)
 internal/version/           # Version constant (override via -ldflags)
 ```
@@ -21,18 +25,23 @@ internal/version/           # Version constant (override via -ldflags)
 ## Usage
 
 ```bash
-gmr [options] [branch-name]   # branch-name defaults to auto/YYYYMMDD-HHMMSS
+gmr [options] [branch-name]   # branch-name defaults to a name derived from the commit title
 gmr -m              # generate commit message only (prints to stdout)
-gmr -s              # after MR/PR, stay on the feature branch (no checkout to main)
+gmr -s              # after MR/PR, stay on the feature branch (skips the stay/switch question)
+gmr deploy [tag]    # tag the next release; --patch/--minor/--major, --no-release, -y
+gmr status [ref]    # CI status for current branch + latest tag; --limit N; exit 1 on failure
 gmr -h | -v
 ```
+
+`deploy` and `status` are reserved as the first argument.
 
 ## Build / Test / Lint
 
 ```bash
-go build ./cmd/gmr
+go build ./...
 go test -race ./...
 go vet ./...
+gofmt -l .          # must print nothing
 ```
 
 ## Dependencies
@@ -44,15 +53,13 @@ go vet ./...
 
 ## Configuration (env vars)
 
-- `GEMINI_MODEL` — Gemini model (default: `gemini-flash-latest`)
-- `ANTHROPIC_MODEL` — Anthropic model (default: `claude-sonnet-4-20250514`)
-- `OPENAI_MODEL` — OpenAI model (default: `gpt-4o-mini`)
-- `GEMINI_BASE_URL` — Gemini API base URL override
-- `ANTHROPIC_BASE_URL` — Anthropic API base URL override
-- `OPENAI_BASE_URL` — OpenAI-compatible API base URL override (e.g. LiteLLM)
-- `GMR_PROVIDERS` — AI provider fallback order, comma-separated (default: `gemini,claude,openai`)
-- `GMR_MAIN_BRANCH` — base branch (default: auto-detected from `origin/HEAD`, fallback: `main`/`master`)
-- `GMR_MAX_DIFF` — max diff lines sent to API (default: `500`)
+- `GEMINI_MODEL` / `ANTHROPIC_MODEL` / `OPENAI_MODEL` — model overrides (defaults: `gemini-flash-latest`, `claude-sonnet-4-20250514`, `gpt-4o-mini`)
+- `GEMINI_BASE_URL` / `ANTHROPIC_BASE_URL` / `OPENAI_BASE_URL` — API base URL overrides (e.g. LiteLLM)
+- `GMR_PROVIDERS` — AI provider fallback order (default: `gemini,claude,openai`)
+- `GMR_COMMIT_STYLE` — `human` (default) or `conventional`
+- `GMR_MAIN_BRANCH` — base branch (default: auto-detected from `origin/HEAD`)
+- `GMR_MAX_DIFF` — max diff/log lines sent to the API (default: `500`)
+- `GMR_TAG_PREFIX` — tag prefix for the first release when no tag exists (default: `v`)
 - `EDITOR` — editor for the `e(edit)` choice (default: `vim`)
 - `NO_COLOR` — disable ANSI colors
 
@@ -60,191 +67,56 @@ go vet ./...
 
 - **Version**: bump `Version` in `internal/version/version.go` (semver: patch for fixes, minor for features, major for breaking).
 - **Changelog**: always update `CHANGELOG.md` (Added/Changed/Fixed/Removed under a new version section).
-- **Tests**: extend tests in `internal/<pkg>/*_test.go` for new behavior; AI providers must use `httptest` and override `ai.HTTPClient`.
-- **README**: update `README.md` if changes affect user-facing info (new flags, new env vars, install instructions, workflow).
-- **Releases**: cut by tagging `vX.Y.Z` and pushing — `.github/workflows/release.yml` builds `linux/{amd64,arm64}` + `darwin/{amd64,arm64}` tarballs and a GitHub Release.
+- **Tests**: extend tests in `internal/<pkg>/*_test.go` for new behavior. AI providers must use `httptest` and override `ai.HTTPClient`; anything shelling out must go through a `Runner` interface with a fake in tests.
+- **README**: update `README.md` if changes affect user-facing info (new flags, env vars, install instructions, workflow).
+- **Releases**: cut by tagging `vX.Y.Z` and pushing — `.github/workflows/release.yml` builds the tarballs and the GitHub Release. Because that workflow already creates the release, use `gmr deploy --no-release` in this repo.
 
 ## Notes
 
-- UI messages are in Ukrainian / English mixed (mirrors the original tool).
+- UI messages are Ukrainian / English mixed (mirrors the original tool).
 - `ui.Log/OK/Warn/Errf` write to `stderr`. `gmr -m` writes the commit message to `stdout` so the output is pipe-friendly.
-- `ai.Provider` is the extension point for new providers; keep them stateless and inject `HTTPClient` via the package var so tests can swap it.
+- `ai.Provider` is the extension point for new providers; keep them stateless, take the full prompt as an argument, and inject `HTTPClient` via the package var so tests can swap it.
 
-# Global Workflow Conventions
+---
 
-User-level defaults for every Claude Code session. **User instructions in chat win.**
+# Workflow conventions
 
-## Default model: Fable 5. The main session MUST delegate execution.
+## Model and delegation
 
-The main session runs **Fable 5** (`claude-fable-5`, Mythos-class — above Opus) because architectural reasoning, plan synthesis, review judgement, and multi-source integration benefit from depth. Direct Fable writes/edits are significantly more expensive than Sonnet, so cost discipline is structural: the main session operates under the hard numerical delegation rules below.
+The main session runs **Opus 5**. Opus writes are expensive, so plan and judge here, execute in Sonnet subagents.
 
-> ⚠️ There is currently NO enforcement hook: the old Cursor `preToolUse` hook (`~/.cursor/hooks/enforce-large-write.sh`) does not exist in this environment. The rules below are self-enforced convention. The only active hook is RTK (`~/.claude/hooks/rtk-rewrite.sh`), which rewrites shell commands for token savings — leave it enabled.
-
-| Operation | Model |
+| Operation | Where |
 |---|---|
-| Main chat (default) | **Fable 5** (`claude-fable-5`) |
-| Plan Mode | Fable 5 (already there) |
-| `Agent()` subagent dispatch | **`sonnet`** (resolves to Sonnet 4.6) |
-| Reviewer subagents (`coderabbit:code-reviewer`, `code-simplifier`) | `model: "sonnet"` |
-| `general-purpose` for plan execution | Sonnet |
-| Isolated worktree runs (`isolation: "worktree"`) | Sonnet |
-| Heavy mechanical edits (typo, rename, boilerplate) | Optionally `haiku` |
+| Main chat, planning, review verdicts, synthesis | Opus 5 (here) |
+| Any `Agent()` dispatch | `model: "sonnet"` |
+| Heavy mechanical edits (rename, boilerplate) | `model: "haiku"` |
 
-## HARD RULES — check BEFORE every tool call
+Dispatch when the work crosses these lines (self-enforced — there is no hook):
 
-### Rule 1 — Writing files (Write tool)
+| Trigger | Action |
+|---|---|
+| Writing a file >30 lines | `Agent(general-purpose, sonnet)` |
+| ≥2 edits, or any multi-file refactor | `Agent(general-purpose, sonnet)` |
+| Reading ≥3 files for analysis | `Agent(Explore, sonnet)` |
+| ≥3 shell commands for context | `Agent(general-purpose, sonnet)` |
 
-| File size                | Action                                                                |
-|--------------------------|-----------------------------------------------------------------------|
-| >30 lines                | STOP. Dispatch `Agent(general-purpose, model="sonnet")`.              |
-| 10–30 lines, mechanical  | Prefer Agent dispatch. Direct Write only with user reviewing inline.  |
-| <10 lines, hand-written  | Direct Write OK.                                                      |
+If a threshold trips, the dispatch is the **first** tool call of the response — not after starting the work by hand. Pass exact paths, verbatim content, and acceptance criteria in the prompt; "I already have the context" is not a reason to skip. Batch independent dispatches into ONE message so they run in parallel.
 
-Multiple small files in a row (≥2) → batch into ONE Agent dispatch.
-
-### Rule 2 — Editing files (Edit tool)
-
-| Edit volume                    | Action                                                                |
-|--------------------------------|-----------------------------------------------------------------------|
-| Single edit, <10 lines diff    | Direct Edit OK.                                                       |
-| ≥2 edits (same or multi-file)  | STOP. Dispatch `Agent(general-purpose, sonnet)` with full list.       |
-
-### Rule 3 — Reading files (Read tool)
-
-| Read volume                    | Action                                                       |
-|--------------------------------|--------------------------------------------------------------|
-| 1–2 files                      | Direct Read OK.                                              |
-| ≥3 files for analysis          | STOP. Dispatch `Agent(Explore, sonnet)`.                     |
-
-Exception: file the user is currently editing or which is the literal subject of the question.
-
-### Rule 4 — Shell context-gathering
-
-| Command volume                 | Action                                                                  |
-|--------------------------------|--------------------------------------------------------------------------|
-| 1–2 quick commands             | Direct Bash OK (`git status`, `ls`).                                    |
-| ≥3 commands for context        | STOP. Dispatch `Agent(general-purpose, sonnet)` with batched commands.  |
-
-There is no dedicated `shell` agent type in Claude Code — batched shell work goes to `general-purpose`.
-
-### Rule 5 — Self-audit at start of every response
-
-Before issuing ANY tool call, count what the current plan implies:
-
-- Planned Write+Edit operations total ≥2 → one Agent dispatch instead.
-- Planned Read operations total ≥3 → Agent(Explore, sonnet).
-- Planned shell commands for context ≥3 → Agent(general-purpose, sonnet).
-- Any single file >30 lines being written → Agent(general-purpose, sonnet).
-
-If ANY threshold trips, the FIRST tool call in the response must be the Agent dispatch.
-
-## Dispatch templates (use verbatim)
+Direct work stays small: 1-2 file reads, 1-2 orientation shell commands, one edit under ~10 lines.
 
 ```
-Agent(
-  subagent_type: "general-purpose",
-  model: "sonnet",
-  description: "<3-5 word title>",
-  prompt: "<full spec: paths, content verbatim or specs, acceptance criteria, lints to pass>"
-)
-
-Agent(
-  subagent_type: "Explore",
-  model: "sonnet",
-  description: "<3-5 word title>",
-  prompt: "<question + directory + expected return shape>"
-)
+Agent(subagent_type: "general-purpose", model: "sonnet",
+      description: "<3-5 words>",
+      prompt: "<paths, content/specs, acceptance criteria, lints to pass>")
 ```
 
-Removed / unavailable in Claude Code (do not reference):
-- Cursor `Task()` tool and `generalPurpose`/`explore`/`shell` subagent types — use the `Agent` tool with `general-purpose`, `Explore`, `Plan`, or `fork`.
-- `best-of-n-runner` — use `Agent(..., isolation: "worktree")` or the `using-git-worktrees` skill.
-- `composer-2-fast` — use `model: "haiku"`.
-- Cursor reviewer subagents (`go-expert`, `postgres-expert`, `react-ts-expert`, `slack-expert`, `test-writer`, `plan-verifier`, `requirements-planner`) — not installed; use `coderabbit:code-reviewer`, `code-simplifier`, or a Sonnet `general-purpose` agent with a review prompt.
-- `implementor` / `react-reviewer` — removed 2026-05-16.
+## Skills
 
-## What the main session DOES directly
+Invoke before acting, not after: `brainstorming` (before creative work) → `writing-plans` → `executing-plans` / `subagent-driven-development`. Also `systematic-debugging` (any bug), `test-driven-development`, `verification-before-completion` (before any "done" claim), `requesting-code-review`, `using-git-worktrees` (isolation), `dispatching-parallel-agents` (2+ independent tasks).
 
-- Read 1–2 relevant files for reasoning.
-- 1–2 inline shell commands for orientation.
-- Edit ≤1 per response, ≤10 lines.
-- Plan documents, ADRs, design conversations, review verdicts (in chat, not as files).
-- Synthesis of subagent results.
-- Direct user dialogue.
+Workspace skills under `<repo>/.claude/skills/` win over global ones.
 
-## What the main session NEVER does directly
+## Don't
 
-- Write a file >30 lines.
-- Apply ≥2 edits in one response.
-- Read ≥3 files for analysis.
-- Run ≥3 context-gathering shell commands.
-- Multi-file refactors.
-- Migration writing.
-
-## Anti-rationalisation list
-
-| Tempting thought                                | Reality                                                  |
-|-------------------------------------------------|----------------------------------------------------------|
-| "It's faster if I do it directly"               | Sonnet subagent returns in 10–30s. Count seconds.        |
-| "I already have the context"                    | Pass it in the prompt.                                   |
-| "Just this one file"                            | Measure lines. >30? Dispatch.                            |
-| "Simple mechanical edit"                        | Simple → Sonnet trivial. Dispatch.                       |
-| "The user is waiting"                           | Burning budget makes them wait longer. Dispatch.         |
-| "Subagent might miss context"                   | Pass exact paths and snippets.                           |
-| "I'll just start and switch later"              | No. First tool call = the dispatch.                      |
-| "A hook will catch me if I'm wrong"             | There is no enforcement hook. The rules are self-enforced. |
-
-## Three workflow patterns
-
-**Pattern A — Parallel isolated agents** (multiple independent features):
-- `Agent(..., isolation: "worktree")` (auto git-worktree), or
-- `using-git-worktrees` superpowers skill (manual)
-- See `dispatching-parallel-agents` skill.
-
-**Pattern B — Plan in Fable, execute in Sonnet** (one big feature):
-1. Plan Mode (Fable) or `writing-plans` skill → PLAN.md
-2. Dispatch each atomic step to `Agent(general-purpose, sonnet)`
-3. Executor invokes the relevant skill before coding
-4. `verification-before-completion` skill before any "done" claim
-
-**Pattern C — Parallel reviewer subagents** (tests + review + plan-verify on one PR):
-- ONE message with multiple parallel `Agent(...)` calls, all Sonnet
-- Typical fan-out: `coderabbit:code-reviewer`, `code-simplifier`, plus a `general-purpose` agent for test coverage
-- See `dispatching-parallel-agents` skill
-
-## Skill priority
-
-- `brainstorming` — before ANY creative work
-- `writing-plans` — after brainstorming, before code
-- `executing-plans` — execute plan with review checkpoints
-- `subagent-driven-development` — parallel tasks in current session
-- `dispatching-parallel-agents` — 2+ independent tasks
-- `using-git-worktrees` — isolation
-- `verification-before-completion` — before "done" claims
-- `requesting-code-review` / `receiving-code-review`
-- `finishing-a-development-branch` — merge/PR/cleanup decision
-- `systematic-debugging` — any bug or unexpected behavior
-- `test-driven-development` — when implementing features
-
-Workspace-specific skills under `<repo>/.claude/skills/` win over global skills (none exist in this repo currently).
-
-## DO NOT use
-
-- `claude-mem` skills (`make-plan`, `do`, `learn-codebase`, `pathfinder`, `smart-explore`) — use superpowers equivalents. Cross-session context is covered by Claude Code's built-in persistent memory.
-- `gsd-*` anything — archived 2026-05-16 to `~/temp/dotfiles-cleanup-2026-05-16/`.
-- Disabling the RTK hook (`~/.claude/hooks/rtk-rewrite.sh`) without replacement.
-
-## Cost discipline
-
-1. Fable default but Fable delegates — hard rules above
-2. Batch parallel `Agent()` calls in ONE message — prompt cache stays warm
-3. RTK proxy (via hook) trims shell output tokens — check `rtk gain` occasionally
-4. Lean on built-in persistent memory — don't re-explain known context
-5. Plan Mode for big decisions — small edits go straight to Sonnet dispatch
-6. Healthy week: Sonnet >70% of tokens, Fable <30%
-
-## Workspace anti-patterns
-
-- Sequential `Agent()` calls when they could be parallel — batch in one message.
-- Re-running already-memoized tools in the same session.
-- Hesitating to dispatch reviewer subagents — Sonnet review (~$0.02) is trivial vs catching bugs late.
+- Don't disable the RTK hook (`~/.claude/hooks/rtk-rewrite.sh`) — it trims shell output tokens.
+- Don't claim work is done without running the build/test/lint commands and reading the output.

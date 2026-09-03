@@ -45,3 +45,32 @@ func TestMRDescription_NoBody(t *testing.T) {
 		t.Errorf("MRDescription = %q, want %q", got, want)
 	}
 }
+
+func TestHumanize(t *testing.T) {
+	cases := []struct {
+		name, in, want string
+	}{
+		{"feat prefix", "feat: add retries", "Add retries"},
+		{"fix prefix", "fix: crash on empty diff", "Crash on empty diff"},
+		{"chore prefix", "chore: bump deps", "Bump deps"},
+		{"feat with scope", "feat(auth): add login", "Add login"},
+		{"feat with bang", "feat!: breaking change", "Breaking change"},
+		{"feat with scope and bang", "feat(auth)!: breaking change", "Breaking change"},
+		{"uppercase type", "FIX: closed bug", "Closed bug"},
+		{"no prefix", "add retries", "Add retries"},
+		{"non-type prefix preserved", "Note: check this", "Note: check this"},
+		{"non-type prefix preserved warn", "WARN: x", "WARN: x"},
+		{"already capitalized", "Add feature", "Add feature"},
+		{"body preserved", "feat: add x\n\n- one\n- two", "Add x\n\n- one\n- two"},
+		{"crlf body preserved", "feat: add x\r\n\r\n- one\r\n- two", "Add x\r\n\r\n- one\r\n- two"},
+		{"empty after strip", "feat:", "feat:"},
+		{"empty string", "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := Humanize(c.in); got != c.want {
+				t.Errorf("Humanize(%q) = %q, want %q", c.in, got, c.want)
+			}
+		})
+	}
+}

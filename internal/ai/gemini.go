@@ -62,13 +62,13 @@ type geminiResp struct {
 }
 
 // Generate implements Provider.
-func (g *Gemini) Generate(ctx context.Context, diff string) (string, error) {
+func (g *Gemini) Generate(ctx context.Context, prompt string) (string, error) {
 	if g.APIKey == "" {
 		return "", ErrNoAPIKey
 	}
 	ui.Log("Generating commit message via Gemini API...")
 
-	body := geminiReq{Contents: []geminiContent{{Parts: []geminiPart{{Text: CommitPrompt + diff}}}}}
+	body := geminiReq{Contents: []geminiContent{{Parts: []geminiPart{{Text: prompt}}}}}
 	body.GenerationConfig.MaxOutputTokens = 1024
 	buf, _ := json.Marshal(body)
 

@@ -6,7 +6,7 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/slucheninov/gmr)](go.mod)
 [![Go Report Card](https://goreportcard.com/badge/github.com/slucheninov/gmr)](https://goreportcard.com/report/github.com/slucheninov/gmr)
 
-CLI-утиліта на Go, яка автоматизує створення Merge Request / Pull Request: стейджить зміни, генерує commit message через AI (Gemini / Claude / OpenAI), створює гілку і відкриває GitLab MR або GitHub PR - однією командою. Платформа визначається автоматично за URL `origin` remote.
+CLI-утиліта на Go, яка автоматизує створення Merge Request / Pull Request: стейджить зміни, генерує commit message через AI (Gemini / Claude / OpenAI) у звичайному людському стилі (або Conventional Commits за бажанням), створює гілку і відкриває GitLab MR або GitHub PR - однією командою. Платформа визначається автоматично за URL `origin` remote.
 
 ## Installation
 
@@ -97,7 +97,11 @@ gmr -m                          # generate commit message only
 gmr -s                          # after MR/PR, stay on the feature branch
 gmr -h                          # help
 gmr -v                          # version
+gmr deploy [options] [tag]      # cut and publish the next release tag
+gmr status [options] [ref]      # show CI/CD pipeline status
 ```
+
+`deploy` і `status` - зарезервовані слова: якщо вони передані першим аргументом, `gmr` вважає це підкомандою, а не назвою гілки.
 
 Якщо `branch-name` не вказано, назва гілки виводиться з AI commit title (наприклад, `fix-detect`, `feat-add`). При колізії додається числовий суфікс (`fix-detect2`). Fallback: `auto-YYYYMMDD-HHMMSS`.
 
@@ -105,7 +109,7 @@ gmr -v                          # version
 
 З прапорцем `-m` (`--message`) скрипт лише генерує commit message через AI (виводиться у `stdout`), без створення гілки, коміту чи MR/PR. Працює з будь-якої гілки.
 
-З прапорцем `-s` (`--stay`) після успішного створення MR/PR ти залишаєшся на feature-гілці; за замовчуванням gmr переключається на основну гілку і робить `git pull`.
+З прапорцем `-s` (`--stay`) після успішного створення MR/PR ти залишаєшся на feature-гілці без жодних питань; без прапорця gmr запитає `Stay on branch '<branch>' or switch to '<main>'? [s/M]:` - `s`/`stay`/`y`/`yes` (без урахування регістру) залишає на гілці, будь-яка інша відповідь або Enter перемикає на основну гілку і робить `git pull`. Якщо stdin не є інтерактивним терміналом, питання пропускається і gmr одразу перемикається на основну гілку.
 
 ## How it works
 
@@ -116,7 +120,38 @@ gmr -v                          # version
 5. З основної гілки створює нову feature-гілку й коміт; з існуючої feature-гілки використовує її напряму. Потім відкриває MR (`glab`) або PR (`gh`).
 6. Для GitLab передає в `glab` явні `title` і `description`: використовує body commit message, а якщо його немає - генерує короткий `## Summary` із заголовка коміту.
 7. Для GitHub - вмикає auto-merge зі squash (gracefully degrade, якщо репо це забороняє).
-8. Для нового flow за замовчуванням повертається на основну гілку і виконує `git pull` (з `-s` / `--stay` залишається на feature-гілці). При запуску з існуючої feature-гілки завжди залишається на ній.
+8. Для нового flow запитує, залишитись на feature-гілці чи перемкнутись на основну (з `-s` / `--stay` питання пропускається і gmr одразу залишається на гілці); за замовчуванням (Enter або інша відповідь) перемикається на основну гілку і виконує `git pull`. При запуску з існуючої feature-гілки завжди залишається на ній без питань.
+
+## `gmr deploy`
+
+Створює наступний semver-тег із комітів з моменту попереднього тега, генерує release notes і semver bump через AI, пушить тег і створює GitHub Release / GitLab Release.
+
+```bash
+gmr deploy              # AI обирає bump (patch/minor/major) і пише release notes
+gmr deploy --minor      # форсувати minor bump замість вибору AI
+gmr deploy v1.4.0       # явний тег - перекриває будь-який bump
+gmr deploy --no-release # створити і запушити тег, але не створювати Release
+gmr deploy -y           # без підтвердження
+```
+
+Правила визначення тега:
+- Якщо в репозиторії ще немає semver-тегів - перший реліз `v0.0.1` (префікс з `GMR_TAG_PREFIX`, за замовчуванням `v`).
+- Інакше - найновіший тег, збільшений на рівень bump (`--patch`/`--minor`/`--major` або вибір AI), з тим самим префіксом.
+- Явний позиційний тег (наприклад `v1.2.3`) перекриває і прапорець, і вибір AI; має відповідати `<prefix>MAJOR.MINOR.PATCH`.
+
+Якщо всі AI-провайдери недоступні, gmr попереджає і використовує `patch` bump та сирий git log як release notes - реліз все одно можна створити, але notes варто переглянути. `gmr deploy` вимагає чистого робочого дерева і запускається з базової гілки (з іншої - попереджає і запитує підтвердження, якщо є TTY).
+
+## `gmr status`
+
+Показує статус останніх CI/CD запусків (GitHub Actions / GitLab Pipelines) для поточної гілки та останнього тега (або явно вказаного ref).
+
+```bash
+gmr status              # поточна гілка + останній тег
+gmr status my-branch    # конкретна гілка/тег
+gmr status --limit 5    # показати 5 останніх запусків на ref (1-20, за замовчуванням 3)
+```
+
+Для кожного ref виводить список запусків (✓/✗/●/○/–) з job'ами найновішого запуску та підсумковий рядок (`all pipelines passed` / `FAILED (<jobs>)` / `still running` / `no pipelines found`). Завершується кодом `1`, якщо найновіший запуск будь-якого перевіреного ref провалився - зручно для скриптів (`gmr status || echo "deploy failed"`).
 
 ## Configuration
 
@@ -132,8 +167,10 @@ gmr -v                          # version
 | `ANTHROPIC_BASE_URL` | Base URL для Claude API override | `https://api.anthropic.com` |
 | `OPENAI_BASE_URL` | Base URL для OpenAI-compatible API override (наприклад LiteLLM) | `https://api.openai.com` |
 | `GMR_PROVIDERS` | Порядок AI-провайдерів (comma-separated) | `gemini,claude,openai` |
+| `GMR_COMMIT_STYLE` | Стиль commit message: `human` (звичайне речення) або `conventional` (`type: description`) | `human` |
 | `GMR_MAIN_BRANCH` | Основна гілка | auto (`origin/HEAD`, fallback: `main`/`master`) |
-| `GMR_MAX_DIFF` | Макс. рядків diff для AI | `500` |
+| `GMR_MAX_DIFF` | Макс. рядків diff/log для AI | `500` |
+| `GMR_TAG_PREFIX` | Префікс тега для `gmr deploy`, коли тегів ще немає (`""` - без префікса) | `v` |
 | `EDITOR` | Редактор для режиму `e(edit)` | `vim` |
 | `NO_COLOR` | Вимкнути ANSI кольори у виводі | - |
 
