@@ -6,6 +6,30 @@ import (
 	"testing"
 )
 
+func TestAskStayOnBranch(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		input string
+		want  bool
+	}{
+		{"s\n", true},
+		{"stay\n", true},
+		{"y\n", true},
+		{"\n", false},
+		{"m\n", false},
+		{"anything\n", false},
+	}
+	for _, tt := range cases {
+		t.Run(tt.input, func(t *testing.T) {
+			t.Parallel()
+			got := askStayOnBranch(strings.NewReader(tt.input), "feature-x", "main")
+			if got != tt.want {
+				t.Errorf("askStayOnBranch(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseGmrArgs(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

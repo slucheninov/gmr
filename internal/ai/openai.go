@@ -59,7 +59,7 @@ type openaiResp struct {
 }
 
 // Generate implements Provider.
-func (o *OpenAI) Generate(ctx context.Context, diff string) (string, error) {
+func (o *OpenAI) Generate(ctx context.Context, prompt string) (string, error) {
 	if o.APIKey == "" {
 		return "", ErrNoAPIKey
 	}
@@ -68,7 +68,7 @@ func (o *OpenAI) Generate(ctx context.Context, diff string) (string, error) {
 	body := openaiReq{
 		Model:     o.Model,
 		MaxTokens: 1024,
-		Messages:  []openaiMessage{{Role: "user", Content: CommitPrompt + diff}},
+		Messages:  []openaiMessage{{Role: "user", Content: prompt}},
 	}
 	buf, _ := json.Marshal(body)
 

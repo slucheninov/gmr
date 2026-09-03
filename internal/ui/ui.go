@@ -71,3 +71,31 @@ func Highlight(s string) string { return colorize(green, s) }
 
 // Prompt returns text in cyan, suitable for interactive prompts.
 func Prompt(s string) string { return colorize(cyan, s) }
+
+// Color identifies one of the palette colors used by Log/OK/Warn/Errf.
+type Color int
+
+const (
+	ColorGreen Color = iota
+	ColorRed
+	ColorYellow
+	ColorCyan
+)
+
+// Colorize wraps s in the given palette color, honoring NO_COLOR and
+// non-terminal output the same way Log/OK/Warn/Errf do. Used for glyphs and
+// other status indicators that don't fit the Log/OK/Warn/Errf shapes.
+func Colorize(c Color, s string) string {
+	switch c {
+	case ColorGreen:
+		return colorize(green, s)
+	case ColorRed:
+		return colorize(red, s)
+	case ColorYellow:
+		return colorize(yellow, s)
+	case ColorCyan:
+		return colorize(cyan, s)
+	default:
+		return s
+	}
+}

@@ -160,3 +160,62 @@ func TestProvidersImplementInterface(t *testing.T) {
 	var _ Provider = NewClaude("", "")
 	var _ Provider = NewOpenAI("", "")
 }
+
+// TestSetStyle intentionally does not run in parallel: it mutates the shared
+// CommitPrompt package var, which provider tests read via HTTP request bodies.
+func TestSetStyle(t *testing.T) {
+	prev := CommitPrompt
+	t.Cleanup(func() { CommitPrompt = prev })
+
+	cases := []struct {
+		name  string
+		style string
+		want  string
+	}{
+		{"conventional", "conventional", ConventionalPrompt},
+		{"human", "human", HumanPrompt},
+		{"empty", "", HumanPrompt},
+		{"uppercase conventional", "CONVENTIONAL", ConventionalPrompt},
+		{"whitespace conventional", "  conventional  ", ConventionalPrompt},
+		{"unknown", "bogus", HumanPrompt},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			SetStyle(tt.style)
+			if CommitPrompt != tt.want {
+				t.Errorf("SetStyle(%q): CommitPrompt = %q, want %q", tt.style, CommitPrompt, tt.want)
+			}
+		})
+	}
+}
+
+// TestCommitPrompt_DefaultIsHuman verifies that, absent a call to SetStyle,
+// providers send the human prompt to the API.
+func TestCommitPrompt_DefaultIsHuman(t *testing.T) {
+	prev := CommitPrompt
+	CommitPrompt = HumanPrompt
+	t.Cleanup(func() { CommitPrompt = prev })
+
+	var gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		gotBody = string(raw)
+		_, _ = w.Write([]byte(`{"candidates":[{"content":{"parts":[{"text":"Add x"}]},"finishReason":"STOP"}]}`))
+	}))
+	defer srv.Close()
+	prevHTTP := HTTPClient
+	HTTPClient = srv.Client()
+	defer func() { HTTPClient = prevHTTP }()
+
+	g := NewGemini("k", "")
+	g.BaseURL = srv.URL
+	if _, err := g.Generate(context.Background(), CommitPrompt+"<diff>"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(gotBody, "Write it the way an experienced human developer would") {
+		t.Errorf("request body does not contain human prompt: %s", gotBody)
+	}
+	if strings.Contains(gotBody, "Conventional Commits format") {
+		t.Errorf("request body unexpectedly contains conventional prompt: %s", gotBody)
+	}
+}

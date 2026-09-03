@@ -181,6 +181,108 @@ func TestHasCommitsSince(t *testing.T) {
 	}
 }
 
+func TestTags(t *testing.T) {
+	r := &fakeRunner{responses: map[string]struct {
+		out string
+		err error
+	}{
+		"tag --list": {out: "v0.1.0\nv0.2.0\n\nv0.3.0"},
+	}}
+	got, err := Tags(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"v0.1.0", "v0.2.0", "v0.3.0"}
+	if len(got) != len(want) {
+		t.Fatalf("Tags() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("Tags()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestTags_Empty(t *testing.T) {
+	r := &fakeRunner{responses: map[string]struct {
+		out string
+		err error
+	}{
+		"tag --list": {out: ""},
+	}}
+	got, err := Tags(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Errorf("Tags() = %v, want empty", got)
+	}
+}
+
+func TestLatestTag_ReturnsEmptyOnError(t *testing.T) {
+	r := &fakeRunner{responses: map[string]struct {
+		out string
+		err error
+	}{
+		"describe --tags --abbrev=0": {err: errors.New("no tags found")},
+	}}
+	got, err := LatestTag(r)
+	if err != nil {
+		t.Fatalf("LatestTag() error = %v, want nil", err)
+	}
+	if got != "" {
+		t.Errorf("LatestTag() = %q, want empty string", got)
+	}
+}
+
+func TestLatestTag_Found(t *testing.T) {
+	r := &fakeRunner{responses: map[string]struct {
+		out string
+		err error
+	}{
+		"describe --tags --abbrev=0": {out: "v1.2.3"},
+	}}
+	got, err := LatestTag(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "v1.2.3" {
+		t.Errorf("LatestTag() = %q, want v1.2.3", got)
+	}
+}
+
+func TestLogRange_WithFrom(t *testing.T) {
+	r := &fakeRunner{responses: map[string]struct {
+		out string
+		err error
+	}{
+		"log v1.0.0..HEAD --no-merges --pretty=format:- %s%n%b": {out: "- fix bug\n- add feature\n"},
+	}}
+	got, err := LogRange(r, "v1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "- fix bug\n- add feature" {
+		t.Errorf("LogRange() = %q", got)
+	}
+}
+
+func TestLogRange_NoFrom(t *testing.T) {
+	r := &fakeRunner{responses: map[string]struct {
+		out string
+		err error
+	}{
+		"log --no-merges --pretty=format:- %s%n%b": {out: "- initial commit"},
+	}}
+	got, err := LogRange(r, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "- initial commit" {
+		t.Errorf("LogRange() = %q", got)
+	}
+}
+
 func TestLastCommitMessage(t *testing.T) {
 	r := &fakeRunner{responses: map[string]struct {
 		out string

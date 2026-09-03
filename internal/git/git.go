@@ -162,6 +162,83 @@ func BranchExists(r Runner, name string) bool {
 	return err == nil
 }
 
+// FetchTags fetches tags from origin so local tag state matches the remote.
+func FetchTags(r Runner) error {
+	_, err := r.Run("fetch", "--tags", "--force", "--quiet")
+	return err
+}
+
+// Tags returns all local tag names.
+func Tags(r Runner) ([]string, error) {
+	out, err := r.Run("tag", "--list")
+	if err != nil {
+		return nil, err
+	}
+	if out == "" {
+		return nil, nil
+	}
+	var tags []string
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			tags = append(tags, line)
+		}
+	}
+	return tags, nil
+}
+
+// TagExists reports whether a tag exists locally.
+func TagExists(r Runner, name string) bool {
+	_, err := r.Run("rev-parse", "-q", "--verify", "refs/tags/"+name)
+	return err == nil
+}
+
+// LatestTag returns the most recent reachable tag, or "" when there is none.
+func LatestTag(r Runner) (string, error) {
+	out, err := r.Run("describe", "--tags", "--abbrev=0")
+	if err != nil {
+		return "", nil
+	}
+	return out, nil
+}
+
+// CreateTag creates an annotated tag with the given message.
+func CreateTag(r Runner, name, msg string) error {
+	_, err := r.Run("tag", "-a", name, "-m", msg)
+	return err
+}
+
+// DeleteLocalTag removes a local tag (used to roll back a failed push).
+func DeleteLocalTag(r Runner, name string) error {
+	_, err := r.Run("tag", "-d", name)
+	return err
+}
+
+// PushTag pushes a single tag to origin.
+func PushTag(r Runner, name string) error {
+	_, err := r.Run("push", "origin", name)
+	return err
+}
+
+// LogRange returns "- subject" lines with bodies for commits in from..HEAD.
+// When from is empty the whole history is used.
+func LogRange(r Runner, from string) (string, error) {
+	rangeArg := ""
+	if from != "" {
+		rangeArg = from + "..HEAD"
+	}
+	args := []string{"log"}
+	if rangeArg != "" {
+		args = append(args, rangeArg)
+	}
+	args = append(args, "--no-merges", "--pretty=format:- %s%n%b")
+	out, err := r.Run(args...)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
 // LimitLines returns the first n lines of s; if s already has <= n lines it is
 // returned unchanged. The returned string keeps the original trailing newline
 // semantics of those n lines.
