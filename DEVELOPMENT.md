@@ -8,34 +8,40 @@
 
 - Go **1.25+**
 - `git`
-- Опціонально: [`golangci-lint`](https://golangci-lint.run/) v2 (така ж версія, як у CI)
-- Опціонально, для end-to-end перевірки: `gh` та/або `glab`, плюс ключ
-  одного з AI-провайдерів
+- Опціонально: [`golangci-lint`](https://golangci-lint.run/) v2. Використовуй
+  збірку, сумісну з локальною версією Go.
+- Опціонально, для end-to-end перевірки: авторизований `gh` та/або `glab`,
+  плюс ключ одного з AI-провайдерів, якщо потрібна AI-генерація
 
 ## Project layout
 
 ```text
-cmd/gmr/main.go             CLI entry point + orchestration
+cmd/gmr/main.go             CLI entry point, argument parsing і MR/PR flow
+cmd/gmr/deploy.go           orchestration для `gmr deploy`
+cmd/gmr/status.go           orchestration і rendering для `gmr status`
 internal/ai/                Provider interface + Gemini / Claude / OpenAI
-internal/git/               git wrapper з тестованим Runner interface
-internal/platform/          host detection (github.com / gitlab.com) + парсинг GitLab path
-internal/commit/            хелпери для commit message (Title / Body / MRDescription)
-internal/ui/                логування + ANSI кольори (поважає NO_COLOR), завжди в stderr
-internal/version/           Version constant (override через -ldflags)
+internal/ci/                адаптери GitHub Actions / GitLab Pipelines
+internal/commit/            commit title/body, branch name і MR description
+internal/git/               git wrapper із тестованим Runner interface
+internal/platform/          host detection + парсинг GitLab project path
+internal/release/           semver, наступний тег і парсинг AI release response
+internal/ui/                stderr-логування + ANSI кольори; поважає NO_COLOR
+internal/version/           Version; override через -ldflags
 ```
 
 ## Build
 
 ```bash
-go build ./cmd/gmr
+go build -o gmr ./cmd/gmr
 ./gmr --version
 ```
 
 З вшитою версією (як у CI/release):
 
 ```bash
+RELEASE_TAG=v1.2.3
 go build -trimpath \
-  -ldflags "-s -w -X github.com/slucheninov/gmr/internal/version.Version=v0.6.0" \
+  -ldflags "-s -w -X github.com/slucheninov/gmr/internal/version.Version=${RELEASE_TAG}" \
   -o gmr ./cmd/gmr
 ```
 
@@ -61,6 +67,11 @@ go tool cover -html=coverage.out -o coverage.html
 - AI-провайдери (Gemini / Claude / OpenAI) — через `httptest`-сервери: успіх,
   обробка помилок API, обрізання відповіді при `MAX_TOKENS` / `length` /
   `max_tokens`.
+- Semver і release response parsing (`internal/release`).
+- Нормалізація GitHub Actions / GitLab pipeline states і JSON-відповідей
+  зовнішніх CLI (`internal/ci`).
+- Парсинг аргументів та orchestration для основної команди, `deploy` і `status`
+  (`cmd/gmr/*_test.go`).
 
 ### Гайдлайни тестування
 
@@ -68,27 +79,38 @@ go tool cover -html=coverage.out -o coverage.html
 - AI-провайдери → `httptest.NewServer` + override `ai.HTTPClient`.
 - Код, що дзвонить `git`, → інтерфейс `git.Runner` + fake-implementation
   (див. `internal/git/git_test.go`).
+- Запити CI через `gh` / `glab` → інтерфейс `ci.Runner` + fake-implementation
+  (див. `internal/ci/ci_test.go`).
+- Default unit suite не повинен залежати від мережі, справжньої авторизації або
+  стану зовнішнього репозиторію.
 
 ## Lint
 
 ```bash
 go vet ./...
+test -z "$(gofmt -l .)"
 golangci-lint run
 ```
 
-Конфіг: [`.golangci.yml`](.golangci.yml). У CI запускаються ті самі
-команди — green локально → green в CI.
+Конфіг: [`.golangci.yml`](.golangci.yml). CI також запускає race-тести з
+coverage і build smoke test на Go 1.25.
 
 ## Run locally
 
-`gmr` потребує справжній git-репозиторій з `origin` remote і авторизований
-`gh` / `glab`. Найпростіше — створити одноразовий тестовий fork і працювати
-там:
+Для повного flow `gmr` потрібен справжній git-репозиторій з `origin` remote та
+авторизований `gh` / `glab`. Використовуй одноразовий fork або тимчасовий
+репозиторій: команда може створювати гілки, коміти, теги, пуші та MR/PR.
+
+Режим `-m` не створює коміт або MR/PR, але все одно виконує `git add -A`, тому
+враховуй зміну index:
 
 ```bash
 export GEMINI_API_KEY=...   # або ANTHROPIC_API_KEY / OPENAI_API_KEY
-go run ./cmd/gmr -m         # safe: лише генерує commit message у stdout
+go run ./cmd/gmr -m         # commit message у stdout, усі зміни staged
 ```
+
+Для перевірки лише парсингу аргументів використовуй unit-тести, а не реальні
+API або remote-операції.
 
 ## Releasing
 
@@ -103,18 +125,25 @@ go run ./cmd/gmr -m         # safe: лише генерує commit message у st
   разом з `LICENSE`, `README.md`, `CHANGELOG.md`.
 - Генерує `checksums.txt` з SHA-256 і прикріпляє все до GitHub Release.
 
-Щоб випустити нову версію:
+Щоб випустити нову версію в цьому репозиторії:
 
 1. Бампнути `Version` у `internal/version/version.go`.
 2. Оновити `CHANGELOG.md` під новою секцією `[X.Y.Z] - YYYY-MM-DD`.
-3. Закомітити, поставити тег `vX.Y.Z`, запушити:
+3. Запустити повний набір перевірок і закомітити зміни.
+4. На чистій базовій гілці створити та запушити тег без окремого GitHub Release:
 
    ```bash
-   git commit -am "chore: release v0.6.0"
+   git commit -am "chore: release v1.2.3"
    git push
-   git tag v0.6.0
-   git push origin v0.6.0
+   gmr deploy --no-release v1.2.3
    ```
 
-Теги з дефісом (наприклад, `v0.6.0-rc.1`) автоматично позначаються як
-prerelease.
+   `--no-release` обов'язковий для стандартного flow цього репозиторію, бо
+   GitHub Actions сам створює Release з кросплатформними артефактами.
+
+Альтернатива без `gmr deploy`: створити annotated tag вручну й запушити його в
+`origin`. Не створюй lightweight tag, якщо релізний процес очікує release notes.
+
+Вручну запушені теги з дефісом (наприклад, `v1.2.3-rc.1`) workflow позначає як
+prerelease. `gmr deploy` приймає лише точний формат
+`<prefix>MAJOR.MINOR.PATCH` без prerelease/build suffix.

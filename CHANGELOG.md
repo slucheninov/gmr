@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.10.1] - 2026-09-11
+
+### Changed
+- Updated all current Markdown guides to match the CLI commands, package layout, configuration, testing conventions, cross-platform artifacts, contribution workflow, and automated release process.
+- Reduced `CLAUDE.md` to an import of `AGENTS.md`, eliminating duplicated instructions and model-specific delegation rules that could drift out of sync.
+- Corrected security guidance to describe exactly which repository data is sent to AI providers, clarify that `GMR_MAX_DIFF=0` does not disable transmission, and keep the supported-version policy current without hard-coded stale versions.
+
 ## [0.10.0] - 2026-09-03
 
 ### Added
@@ -42,24 +49,6 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - `--stay` / `-s`: after creating an MR/PR, stay on the feature branch instead of checking out the base branch and running `git pull`. Interrupt (`SIGINT`/`SIGTERM`) still switches back to the base branch to leave the worktree in a known state on partial runs.
-
-## [0.1.0] - 2026-03-29
-
-### Added
-- Initial gmr script: stages changes, generates AI commit message, creates branch, commits, opens GitLab MR
-- Commit message generation via Gemini API (primary) and Claude API (fallback)
-- Manual input fallback when both APIs are unavailable
-- Interactive accept/reject/edit flow for generated commit messages
-- Help (`-h`, `--help`) and version (`-v`, `--version`) options
-- Install script with `~/.gmr/bin` directory and `/usr/local/bin` symlink
-- Truncation detection for Gemini and Claude API responses
-- Configurable via environment variables: `GMR_MAIN_BRANCH`, `GMR_GEMINI_MODEL`, `GMR_ANTHROPIC_MODEL`, `GMR_MAX_DIFF`
-
-### Changed
-- UI messages translated to English for log/error output
-- Logging functions (`log`, `ok`, `warn`, `err`) redirect to stderr
-- `--squash-before-merge` option added to `glab mr create`
-- Max output tokens increased for both Gemini and Claude APIs
 
 ## [0.6.0] - 2026-04-25
 
@@ -128,3 +117,21 @@ All notable changes to this project will be documented in this file.
 - Gemini truncation no longer causes full failure — first line of response is used as commit message
 - Claude truncation no longer causes full failure — same fix applied
 - Truncation warning now includes diff size for diagnostics
+
+## [0.1.0] - 2026-03-29
+
+### Added
+- Initial gmr script: stages changes, generates AI commit message, creates branch, commits, opens GitLab MR
+- Commit message generation via Gemini API (primary) and Claude API (fallback)
+- Manual input fallback when both APIs are unavailable
+- Interactive accept/reject/edit flow for generated commit messages
+- Help (`-h`, `--help`) and version (`-v`, `--version`) options
+- Install script with `~/.gmr/bin` directory and `/usr/local/bin` symlink
+- Truncation detection for Gemini and Claude API responses
+- Configurable via environment variables: `GMR_MAIN_BRANCH`, `GMR_GEMINI_MODEL`, `GMR_ANTHROPIC_MODEL`, `GMR_MAX_DIFF`
+
+### Changed
+- UI messages translated to English for log/error output
+- Logging functions (`log`, `ok`, `warn`, `err`) redirect to stderr
+- `--squash-before-merge` option added to `glab mr create`
+- Max output tokens increased for both Gemini and Claude APIs

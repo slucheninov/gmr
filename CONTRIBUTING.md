@@ -26,15 +26,17 @@ participating in this project, you agree to abide by the
 
 - Go **1.25+**
 - `git`
-- Optional: [`golangci-lint`](https://golangci-lint.run/) v2 (matches CI)
-- Optional, for end-to-end testing: `gh` and/or `glab`, plus an AI API key
+- Optional: [`golangci-lint`](https://golangci-lint.run/) v2, built with a Go
+  version compatible with your local toolchain
+- Optional, for end-to-end testing: authenticated `gh` and/or `glab`, plus an
+  AI API key when testing generation
 
 ### Clone and build
 
 ```bash
 git clone https://github.com/slucheninov/gmr.git
 cd gmr
-go build ./cmd/gmr
+go build -o gmr ./cmd/gmr
 ./gmr --version
 ```
 
@@ -50,10 +52,12 @@ go tool cover -func=coverage.out
 
 ```bash
 go vet ./...
+test -z "$(gofmt -l .)"
 golangci-lint run
 ```
 
-CI runs the same commands on Go 1.25 — green locally → green in CI.
+CI runs vet, golangci-lint, race-enabled tests with coverage, and a build smoke
+test on Go 1.25.
 
 ## Pull request workflow
 
@@ -66,16 +70,22 @@ CI runs the same commands on Go 1.25 — green locally → green in CI.
    - Pure logic → standard `*_test.go` next to the file.
    - AI providers → `httptest`-backed tests that override `ai.HTTPClient`.
    - `git`-touching code → use the `git.Runner` interface and inject a fake.
-4. **Update the changelog** under the `## [Unreleased]` section in
+   - CI queries through `gh` / `glab` → use `ci.Runner` and inject a fake.
+4. **Bump the version** in `internal/version/version.go`: patch for fixes,
+   docs, and refactors; minor for features; major for breaking changes.
+5. **Update the changelog** with a dated `[X.Y.Z]` section in
    [`CHANGELOG.md`](CHANGELOG.md). Use the categories `Added` / `Changed` /
    `Fixed` / `Removed`.
-5. **Update docs** if you changed user-visible behavior (flags, env vars,
-   workflow). README and `internal/<pkg>/doc` comments should stay in sync.
-6. **Run the full check suite** locally:
+6. **Update docs** if you changed user-visible behavior (flags, env vars,
+   installation, security, or workflow). Keep `README.md`, `DEVELOPMENT.md`,
+   and the CLI help text in sync where applicable.
+7. **Run the full check suite** locally:
    ```bash
-   go vet ./... && golangci-lint run && go test -race ./...
+   go build ./... && go test -race ./... && go vet ./...
+   test -z "$(gofmt -l .)"
+   golangci-lint run
    ```
-7. **Open a PR** against `master`. Fill in the description with:
+8. **Open a PR** against `master`. Fill in the description with:
    - What problem this solves and why.
    - Screenshots or terminal output for UX changes.
    - Linked issue(s), if any (`Closes #123`).
@@ -90,10 +100,10 @@ not about you.
 - **Style** — follow [Effective Go](https://go.dev/doc/effective_go) and
   the [Go Code Review Comments](https://github.com/golang/go/wiki/CodeReviewComments).
 - **Errors** — return them; do not log-and-swallow. The CLI layer
-  (`cmd/gmr/main.go`) is the only place that calls `ui.Errf`.
+  (`cmd/gmr/*.go`) owns user-facing error rendering.
 - **Side effects** — keep `internal/*` packages pure where possible. Put
   process-wide state (signal handling, stdin/stdout, `os.Exit`) in
-  `cmd/gmr/main.go`.
+  `cmd/gmr`.
 - **Public API** — anything outside `internal/` is part of the importable
   Go API. Don't expose helpers there unless intentional.
 - **Comments** — explain *why*, not *what*. Avoid narrating the obvious.
@@ -111,7 +121,7 @@ The `ai.Provider` interface is the extension point:
 ```go
 type Provider interface {
     Name() string
-    Generate(ctx context.Context, diff string) (string, error)
+    Generate(ctx context.Context, prompt string) (string, error)
 }
 ```
 
@@ -121,12 +131,13 @@ Checklist for a new provider:
 
 1. New file `internal/ai/<name>.go` implementing `Provider`.
 2. Honor `ai.HTTPClient` for HTTP calls (so tests can inject `httptest`).
-3. Use `ai.CommitPrompt` as the system prompt prefix.
+3. Treat the supplied prompt as complete; command orchestration selects
+   `ai.CommitPrompt` or `ai.ReleasePrompt` before calling the provider.
 4. Return `ai.ErrNoAPIKey` when the key is empty.
-5. Handle truncation (`finishReason: MAX_TOKENS` etc.) by falling back to the
-   first line of the response.
-6. Wire it into the chain in `cmd/gmr/main.go` (preserve order:
-   Gemini → Claude → OpenAI → new ones go to the end unless replacing).
+5. Handle provider-specific truncation (`finishReason: MAX_TOKENS` etc.) by
+   falling back to the first line of the response.
+6. Wire it into `makeProvider` and the default chain in `cmd/gmr/main.go`, and
+   make it selectable through `GMR_PROVIDERS`.
 7. Add tests in `internal/ai/ai_test.go` covering: missing key, success, API
    error payload, truncated response.
 8. Document the env var in [README.md](README.md) → Configuration and update
@@ -134,13 +145,15 @@ Checklist for a new provider:
 
 ## Releasing
 
-Releases are cut by maintainers via a tag push:
+Releases are cut by maintainers from a clean base branch:
 
 1. Bump `Version` in `internal/version/version.go`.
-2. Move `[Unreleased]` entries in `CHANGELOG.md` under a dated
-   `[X.Y.Z] - YYYY-MM-DD` heading.
-3. Commit, tag `vX.Y.Z`, push the tag — `.github/workflows/release.yml` does
-   the rest (build matrix, archives, checksums, GitHub Release).
+2. Add a dated `[X.Y.Z] - YYYY-MM-DD` section to `CHANGELOG.md`.
+3. Run the full checks, commit, and push the branch.
+4. Run `gmr deploy --no-release v1.2.3` (substitute the intended version). The
+   tag push triggers `.github/workflows/release.yml`, which runs tests, builds
+   archives and checksums, and creates the GitHub Release. Do not let
+   `gmr deploy` create a second platform release for this repository.
 
 ## Questions?
 

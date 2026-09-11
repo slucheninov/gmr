@@ -8,9 +8,10 @@ Conduct. The full text is available at:
 ## Reporting
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported privately via the channels listed in [SECURITY.md](SECURITY.md), with
-the subject prefix `[gmr-conduct]`. All complaints will be reviewed and
-investigated promptly and fairly.
+reported privately to the maintainer using the email listed on their
+[GitHub profile](https://github.com/slucheninov), with the subject prefix
+`[gmr-conduct]`. Do not open a public issue for conduct reports. All complaints
+will be reviewed and investigated promptly and fairly.
 
 Project maintainers are obligated to respect the privacy and security of the
 reporter of any incident.

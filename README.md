@@ -6,11 +6,15 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/slucheninov/gmr)](go.mod)
 [![Go Report Card](https://goreportcard.com/badge/github.com/slucheninov/gmr)](https://goreportcard.com/report/github.com/slucheninov/gmr)
 
-CLI-утиліта на Go, яка автоматизує створення Merge Request / Pull Request: стейджить зміни, генерує commit message через AI (Gemini / Claude / OpenAI) у звичайному людському стилі (або Conventional Commits за бажанням), створює гілку і відкриває GitLab MR або GitHub PR - однією командою. Платформа визначається автоматично за URL `origin` remote.
+CLI-утиліта на Go, яка автоматизує створення Merge Request / Pull Request:
+стейджить зміни, генерує commit message через AI (Gemini / Claude / OpenAI),
+створює або повторно використовує feature-гілку та відкриває GitLab MR або
+GitHub PR. Окремі підкоманди створюють релізи (`gmr deploy`) і показують стан
+CI/CD (`gmr status`). Платформа визначається автоматично за URL `origin` remote.
 
 ## Installation
 
-### Pre-built binary (рекомендовано)
+### Pre-built binary для Linux/macOS (рекомендовано)
 
 Завантажити архів для вашої ОС / архітектури з [GitHub Releases](https://github.com/slucheninov/gmr/releases/latest):
 
@@ -18,9 +22,9 @@ CLI-утиліта на Go, яка автоматизує створення Mer
 VERSION=$(curl -fsSL https://api.github.com/repos/slucheninov/gmr/releases/latest | jq -r .tag_name)
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-curl -L -o gmr.tar.gz \
-  "https://github.com/slucheninov/gmr/releases/download/${VERSION}/gmr-${VERSION}-${OS}-${ARCH}.tar.gz"
-tar -xzf gmr.tar.gz
+ARCHIVE="gmr-${VERSION}-${OS}-${ARCH}.tar.gz"
+curl -LO "https://github.com/slucheninov/gmr/releases/download/${VERSION}/${ARCHIVE}"
+tar -xzf "${ARCHIVE}"
 sudo install -m 0755 gmr /usr/local/bin/gmr
 gmr --version
 ```
@@ -29,8 +33,20 @@ gmr --version
 
 ```bash
 curl -L -O "https://github.com/slucheninov/gmr/releases/download/${VERSION}/checksums.txt"
-sha256sum -c checksums.txt --ignore-missing
+CHECKSUM=$(awk -v archive="${ARCHIVE}" '$2 == archive { print $1 }' checksums.txt)
+test -n "${CHECKSUM}"
+printf '%s  %s\n' "${CHECKSUM}" "${ARCHIVE}" | shasum -a 256 -c -
 ```
+
+Цей install-приклад використовує `curl`, `jq`, `awk` і `shasum`; вони потрібні
+лише для завантаження та перевірки архіву, але не для роботи `gmr`.
+
+### Pre-built binary для Windows
+
+Завантаж `gmr-<VERSION>-windows-amd64.zip` або
+`gmr-<VERSION>-windows-arm64.zip` зі сторінки
+[GitHub Releases](https://github.com/slucheninov/gmr/releases/latest), звір
+SHA-256 із `checksums.txt`, розпакуй `gmr.exe` і додай його теку до `PATH`.
 
 ### Через `go install`
 
@@ -38,7 +54,8 @@ sha256sum -c checksums.txt --ignore-missing
 go install github.com/slucheninov/gmr/cmd/gmr@latest
 ```
 
-Бінарник буде у `$(go env GOBIN)` (за замовчуванням `~/go/bin`). Переконайся, що ця тека є в `PATH`.
+Якщо `go env GOBIN` порожній, бінарник буде у `$(go env GOPATH)/bin`;
+інакше — у явно налаштованому `GOBIN`. Переконайся, що ця тека є в `PATH`.
 
 ### З вихідного коду
 
@@ -51,15 +68,15 @@ sudo install -m 0755 gmr /usr/local/bin/gmr
 
 ## Update
 
-### Pre-built binary
+### Pre-built binary для Linux/macOS
 
 ```bash
 VERSION=$(curl -fsSL https://api.github.com/repos/slucheninov/gmr/releases/latest | jq -r .tag_name)
 OS=$(uname -s | tr '[:upper:]' '[:lower:]')
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-curl -L -o gmr.tar.gz \
-  "https://github.com/slucheninov/gmr/releases/download/${VERSION}/gmr-${VERSION}-${OS}-${ARCH}.tar.gz"
-tar -xzf gmr.tar.gz
+ARCHIVE="gmr-${VERSION}-${OS}-${ARCH}.tar.gz"
+curl -LO "https://github.com/slucheninov/gmr/releases/download/${VERSION}/${ARCHIVE}"
+tar -xzf "${ARCHIVE}"
 sudo install -m 0755 gmr /usr/local/bin/gmr
 gmr --version
 ```
@@ -79,15 +96,16 @@ go build -o gmr ./cmd/gmr
 sudo install -m 0755 gmr /usr/local/bin/gmr
 ```
 
-## Requirements
+## Runtime requirements
 
-- `glab` - [GitLab CLI](https://gitlab.com/gitlab-org/cli) (для GitLab репо)
-- `gh` - [GitHub CLI](https://cli.github.com) (для GitHub репо)
-- `git`
-- `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, та/або `OPENAI_API_KEY` (хоча б один)
-- Авторизований `glab` (`glab auth login`) для GitLab API або авторизований `gh` (`gh auth login`) для GitHub API
-
-> Залежності `jq` і `curl` більше не потрібні - все робиться силами Go-бінарника.
+- `git`.
+- [GitLab CLI](https://gitlab.com/gitlab-org/cli) `glab` для GitLab або
+  [GitHub CLI](https://cli.github.com) `gh` для GitHub; відповідний CLI має
+  бути авторизований через `glab auth login` або `gh auth login`.
+- `GEMINI_API_KEY`, `ANTHROPIC_API_KEY` та/або `OPENAI_API_KEY`, коли потрібно
+  згенерувати commit message. Уже закомічена feature-гілка та `gmr status` не
+  потребують AI-ключа; `gmr deploy` може використати fallback без AI.
+- `EDITOR` потрібен лише для інтерактивної команди `e(edit)`.
 
 ## Usage
 
@@ -107,7 +125,9 @@ gmr status [options] [ref]      # show CI/CD pipeline status
 
 Якщо `gmr` запущено з уже створеної feature-гілки, яка має коміти відносно основної гілки, він використовує її як source branch і одразу створює MR/PR. Нова гілка та новий коміт не створюються, AI API key не потрібен, а після завершення (або помилки) `gmr` залишається на поточній feature-гілці. Якщо в ній є незакомічені зміни, вони спочатку комітяться у цю ж гілку.
 
-З прапорцем `-m` (`--message`) скрипт лише генерує commit message через AI (виводиться у `stdout`), без створення гілки, коміту чи MR/PR. Працює з будь-якої гілки.
+З прапорцем `-m` (`--message`) утиліта стейджить усі зміни через `git add -A` і
+генерує commit message через AI (виводиться у `stdout`), але не створює гілку,
+коміт або MR/PR. Працює з будь-якої гілки.
 
 З прапорцем `-s` (`--stay`) після успішного створення MR/PR ти залишаєшся на feature-гілці без жодних питань; без прапорця gmr запитає `Stay on branch '<branch>' or switch to '<main>'? [s/M]:` - `s`/`stay`/`y`/`yes` (без урахування регістру) залишає на гілці, будь-яка інша відповідь або Enter перемикає на основну гілку і робить `git pull`. Якщо stdin не є інтерактивним терміналом, питання пропускається і gmr одразу перемикається на основну гілку.
 
@@ -166,13 +186,22 @@ gmr status --limit 5    # показати 5 останніх запусків �
 | `GEMINI_BASE_URL` | Base URL для Gemini API override | `https://generativelanguage.googleapis.com/v1beta` |
 | `ANTHROPIC_BASE_URL` | Base URL для Claude API override | `https://api.anthropic.com` |
 | `OPENAI_BASE_URL` | Base URL для OpenAI-compatible API override (наприклад LiteLLM) | `https://api.openai.com` |
-| `GMR_PROVIDERS` | Порядок AI-провайдерів (comma-separated) | `gemini,claude,openai` |
+| `GMR_PROVIDERS` | Порядок AI-провайдерів; comma-separated, `anthropic` = `claude` | `gemini,claude,openai` |
 | `GMR_COMMIT_STYLE` | Стиль commit message: `human` (звичайне речення) або `conventional` (`type: description`) | `human` |
 | `GMR_MAIN_BRANCH` | Основна гілка | auto (`origin/HEAD`, fallback: `main`/`master`) |
 | `GMR_MAX_DIFF` | Макс. рядків diff/log для AI | `500` |
 | `GMR_TAG_PREFIX` | Префікс тега для `gmr deploy`, коли тегів ще немає (`""` - без префікса) | `v` |
 | `EDITOR` | Редактор для режиму `e(edit)` | `vim` |
 | `NO_COLOR` | Вимкнути ANSI кольори у виводі | - |
+
+### Конфіденційність
+
+Під час генерації commit message `gmr` виконує `git add -A` і надсилає
+провайдеру diff (до `GMR_MAX_DIFF` рядків) разом зі статистикою змін. Під час
+`gmr deploy` провайдер отримує обмежений git log. `GMR_MAX_DIFF` — лише ліміт,
+а не спосіб повністю вимкнути передачу даних. Не запускай AI-функції для змін,
+які не можна передавати обраному провайдеру; зроби коміт вручну. Детальніше —
+у [SECURITY.md](SECURITY.md).
 
 ## Development
 

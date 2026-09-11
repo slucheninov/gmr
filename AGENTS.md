@@ -1,71 +1,141 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+Guidance for Codex and other coding agents working in this repository.
 
 ## Overview
 
-`gmr` (Git Merge Request) is a Go CLI that automates the merge request / pull request workflow. It stages changes, generates a commit message via AI (Gemini → Claude → OpenAI → manual), creates a branch, commits, and opens a GitLab MR or GitHub PR — all in one command. Platform is auto-detected from the `origin` remote URL.
+`gmr` (Git Merge Request) is a Go CLI for GitLab and GitHub workflows. Its
+default command stages changes, generates a commit message through the configured
+AI provider chain (Gemini -> Claude -> OpenAI -> manual), creates or reuses a
+feature branch, commits, pushes, and opens an MR/PR. It also provides `gmr deploy`
+for releases and `gmr status` for CI/CD status. The platform is detected from the
+`origin` remote URL.
 
-## Layout
+## Project layout
 
+```text
+cmd/gmr/main.go             CLI entry point, argument parsing, and MR/PR flow
+cmd/gmr/deploy.go           `gmr deploy` release orchestration
+cmd/gmr/status.go           `gmr status` CI/CD reporting
+internal/ai/                AI provider interface and Gemini/Claude/OpenAI clients
+internal/ci/                GitHub Actions and GitLab pipeline adapters
+internal/commit/            commit title/body, branch name, and MR description helpers
+internal/git/               git command wrapper and testable Runner interface
+internal/platform/          platform detection and GitLab project-path parsing
+internal/release/           semver, next-tag, and AI release-response helpers
+internal/ui/                stderr logging and ANSI colors; honors NO_COLOR
+internal/version/           build version; overridable with -ldflags
 ```
-cmd/gmr/main.go             # CLI entry point and orchestration
-internal/ai/                # Gemini / Claude / OpenAI providers (Provider interface)
-internal/git/               # git wrapper (Runner interface — testable)
-internal/platform/          # platform detection + GitLab project path parsing
-internal/commit/            # commit-message helpers (title, body, MR description)
-internal/ui/                # logging + ANSI colors (honors NO_COLOR)
-internal/version/           # Version constant (override via -ldflags)
-```
 
-## Usage
+Keep orchestration in `cmd/gmr` and reusable/testable behavior in the relevant
+`internal` package.
+
+## Commands
 
 ```bash
-gmr [options] [branch-name]   # branch-name defaults to auto/YYYYMMDD-HHMMSS
-gmr -m              # generate commit message only (prints to stdout)
-gmr -s              # after MR/PR, stay on the feature branch (no checkout to main)
+gmr [options] [branch-name] # commit changes and open an MR/PR
+gmr -m                     # print a generated commit message only
+gmr -s                     # create MR/PR and stay on the feature branch
+gmr deploy [options] [tag] # create and push a release tag
+gmr status [options] [ref] # report recent CI/CD runs
 gmr -h | -v
 ```
 
-## Build / Test / Lint
+- An omitted branch name is derived from the generated commit title, with
+  `auto-YYYYMMDD-HHMMSS` as the final fallback.
+- On an existing feature branch, `gmr` reuses the branch and any commits ahead
+  of the base branch. Uncommitted changes are committed there first.
+- `deploy` and `status` are reserved when they are the first argument.
+- `gmr status` exits with status 1 when the newest run of any inspected ref has
+  failed.
+
+## Build, test, and lint
+
+Run the checks relevant to the change before reporting completion:
 
 ```bash
-go build ./cmd/gmr
+go build ./...
 go test -race ./...
 go vet ./...
+gofmt -l .                 # must print nothing
+golangci-lint run          # when golangci-lint is installed
 ```
 
-## Dependencies
+CI uses Go 1.25, `go vet`, golangci-lint, race-enabled tests with coverage, and
+a binary build smoke test.
 
-- Go 1.25+
-- `glab` (GitLab CLI) or `gh` (GitHub CLI) — only at runtime, not for building
-- `git`
-- `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, and/or `OPENAI_API_KEY` (at least one required)
+## Runtime dependencies
 
-## Configuration (env vars)
+- Go 1.25+ for building or installing from source.
+- `git` for all repository operations.
+- Authenticated `glab` for GitLab repositories or `gh` for GitHub repositories.
+- At least one of `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, or `OPENAI_API_KEY`
+  when AI output is required. Opening an MR/PR from an already committed feature
+  branch and `gmr status` do not require an AI key; `gmr deploy` has a non-AI
+  fallback.
 
-- `GEMINI_MODEL` — Gemini model (default: `gemini-flash-latest`)
-- `ANTHROPIC_MODEL` — Anthropic model (default: `claude-sonnet-4-20250514`)
-- `OPENAI_MODEL` — OpenAI model (default: `gpt-4o-mini`)
-- `GEMINI_BASE_URL` — Gemini API base URL override
-- `ANTHROPIC_BASE_URL` — Anthropic API base URL override
-- `OPENAI_BASE_URL` — OpenAI-compatible API base URL override (e.g. LiteLLM)
-- `GMR_PROVIDERS` — AI provider fallback order, comma-separated (default: `gemini,claude,openai`)
-- `GMR_MAIN_BRANCH` — base branch (default: auto-detected from `origin/HEAD`, fallback: `main`/`master`)
-- `GMR_MAX_DIFF` — max diff lines sent to API (default: `500`)
-- `EDITOR` — editor for the `e(edit)` choice (default: `vim`)
-- `NO_COLOR` — disable ANSI colors
+## Environment variables
 
-## Rules for changes
+- Provider credentials: `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`.
+- Model overrides: `GEMINI_MODEL` (default `gemini-flash-latest`),
+  `ANTHROPIC_MODEL` (default `claude-sonnet-4-20250514`), and `OPENAI_MODEL`
+  (default `gpt-4o-mini`).
+- Endpoint overrides: `GEMINI_BASE_URL`, `ANTHROPIC_BASE_URL`, and
+  `OPENAI_BASE_URL` (the latter supports OpenAI-compatible proxies such as
+  LiteLLM).
+- `GMR_PROVIDERS`: comma-separated fallback order; default
+  `gemini,claude,openai` (`anthropic` is accepted as an alias for `claude`).
+- `GMR_COMMIT_STYLE`: `human` (default) or `conventional`.
+- `GMR_MAIN_BRANCH`: base branch override; otherwise detected from
+  `origin/HEAD`, then local `main`/`master`.
+- `GMR_MAX_DIFF`: maximum diff or log lines sent to AI; default `500`.
+- `GMR_TAG_PREFIX`: prefix for the first generated release tag; default `v`.
+- `EDITOR`: editor for the interactive edit choice; default `vim`.
+- `NO_COLOR`: disables ANSI colors.
 
-- **Version**: bump `Version` in `internal/version/version.go` (semver: patch for fixes, minor for features, major for breaking).
-- **Changelog**: always update `CHANGELOG.md` (Added/Changed/Fixed/Removed under a new version section).
-- **Tests**: extend tests in `internal/<pkg>/*_test.go` for new behavior; AI providers must use `httptest` and override `ai.HTTPClient`.
-- **README**: update `README.md` if changes affect user-facing info (new flags, new env vars, install instructions, workflow).
-- **Releases**: cut by tagging `vX.Y.Z` and pushing — `.github/workflows/release.yml` builds `linux/{amd64,arm64}` + `darwin/{amd64,arm64}` tarballs and a GitHub Release.
+## Security and privacy
 
-## Notes
+- Commit generation, including `gmr -m`, runs `git add -A` and sends the diff
+  stat plus up to `GMR_MAX_DIFF` diff lines to the selected AI endpoint.
+- Release generation may send commit subjects and bodies since the previous tag.
+- `GMR_MAX_DIFF` is a line limit, not an opt-out switch; zero or invalid values
+  restore the default. For sensitive changes, commit manually instead of using
+  AI generation.
+- Treat API keys as secrets and point `*_BASE_URL` variables only at trusted
+  endpoints. Never log keys or include them in errors, test fixtures, or docs.
 
-- UI messages are in Ukrainian / English mixed (mirrors the original tool).
-- `ui.Log/OK/Warn/Errf` write to `stderr`. `gmr -m` writes the commit message to `stdout` so the output is pipe-friendly.
-- `ai.Provider` is the extension point for new providers; keep them stateless and inject `HTTPClient` via the package var so tests can swap it.
+## Implementation and testing conventions
+
+- Keep AI providers stateless and pass the complete prompt to `Generate`.
+- AI provider tests use `httptest` and temporarily replace `ai.HTTPClient`,
+  restoring it afterward.
+- Route git operations through `git.Runner`; route CI CLI queries through
+  `ci.Runner`. Use fakes in unit tests instead of invoking real repositories or
+  remote services.
+- Put pure helper tests beside their package in `*_test.go`. Extend command tests
+  in `cmd/gmr/*_test.go` when parsing or orchestration behavior changes.
+- Preserve the output contract: `ui.Log`, `ui.OK`, `ui.Warn`, and `ui.Errf` write
+  to stderr; `gmr -m` writes only the commit message to stdout.
+- Do not make network-backed end-to-end tests part of the default unit suite.
+
+## Required accompanying changes
+
+- Bump `internal/version/version.go` for every repository change: patch for
+  fixes/docs/refactors, minor for features, major for breaking changes.
+- Add a dated version section to `CHANGELOG.md`, using the applicable
+  `Added`/`Changed`/`Fixed`/`Removed` headings.
+- Update tests for changed behavior and `README.md` for user-visible flags,
+  environment variables, installation steps, or workflows.
+- Keep unrelated user changes intact and keep generated build artifacts out of
+  commits.
+
+## Releases
+
+Pushing a `vX.Y.Z` tag triggers `.github/workflows/release.yml`. It tests the
+tag, builds Linux, macOS, and Windows archives for amd64 and arm64, generates
+`checksums.txt`, and creates the GitHub Release. Because the workflow owns GitHub
+Release creation for this repository, use `gmr deploy --no-release` when cutting
+a release here.
+
+Before tagging, confirm that `internal/version/version.go` and `CHANGELOG.md`
+match the tag and that the full build/test/lint checks pass.
