@@ -7,9 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
-	"time"
 
-	"github.com/slucheninov/gmr/internal/commit"
 	"github.com/slucheninov/gmr/internal/git"
 	"github.com/slucheninov/gmr/internal/platform"
 	"github.com/slucheninov/gmr/internal/ui"
@@ -115,7 +113,7 @@ func actOnMessageOnlyChoice(r git.Runner, action msgOnlyAction, msg, current, ma
 		return err
 	}
 	ui.OK("Committed to '%s'", current)
-	printNextSteps(r, current, mainBranch, msg)
+	printNextSteps(r, current, mainBranch)
 	return nil
 }
 
@@ -124,7 +122,7 @@ func actOnMessageOnlyChoice(r git.Runner, action msgOnlyAction, msg, current, ma
 // `origin` remote URL without requiring gh/glab to be installed or
 // authenticated; when there is no origin remote or its host is unrecognized,
 // only remote-agnostic commands are printed.
-func printNextSteps(r git.Runner, branch, mainBranch, msg string) {
+func printNextSteps(r git.Runner, branch, mainBranch string) {
 	ui.Log("Next steps:")
 
 	if branch == "" {
@@ -147,12 +145,7 @@ func printNextSteps(r git.Runner, branch, mainBranch, msg string) {
 		}
 	}
 
-	fallback := commit.BranchName(commit.Title(msg))
-	if fallback == "" {
-		fallback = "auto-" + time.Now().Format("20060102-150405")
-	}
-
-	for _, c := range nextStepCommands(kind, gitlabPath, branch, mainBranch, fallback) {
+	for _, c := range nextStepCommands(kind, gitlabPath, branch, mainBranch) {
 		fmt.Fprintf(ui.Out, "  %s\n", c)
 	}
 }
@@ -162,7 +155,7 @@ func printNextSteps(r git.Runner, branch, mainBranch, msg string) {
 // means the platform is unknown or there is nothing to detect it from; in
 // that case only remote-agnostic commands are returned. branch == "" is
 // detached HEAD and returns nil — the caller is expected to warn separately.
-func nextStepCommands(kind platform.Kind, gitlabPath, branch, mainBranch, fallbackBranch string) []string {
+func nextStepCommands(kind platform.Kind, gitlabPath, branch, mainBranch string) []string {
 	if branch == "" {
 		return nil
 	}
@@ -174,15 +167,13 @@ func nextStepCommands(kind platform.Kind, gitlabPath, branch, mainBranch, fallba
 		return cmds
 	}
 
-	// On the main branch: a direct push is possible, but opening an MR/PR
-	// needs its own branch.
-	cmds := []string{
+	// On the main branch: push it, then run gmr — it moves the unpushed
+	// commit(s) to a new branch, opens the MR/PR, and resets local main to
+	// origin/main.
+	return []string{
 		"git push origin " + shellQuote(mainBranch),
-		fmt.Sprintf("git switch -c %s && git push -u origin %s", shellQuote(fallbackBranch), shellQuote(fallbackBranch)),
+		"gmr  # moves the commit to a new branch and opens MR/PR",
 	}
-	cmds = append(cmds, createCommand(kind, gitlabPath, fallbackBranch, mainBranch)...)
-	cmds = append(cmds, fmt.Sprintf("# Note: local %s still has this commit; reset later with: git switch %s && git reset --hard origin/%s", mainBranch, mainBranch, mainBranch))
-	return cmds
 }
 
 // createCommand returns the gh/glab MR/PR-creation command for the given

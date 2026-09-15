@@ -52,7 +52,7 @@ func TestNextStepCommands(t *testing.T) {
 
 	t.Run("detached HEAD returns nil", func(t *testing.T) {
 		t.Parallel()
-		got := nextStepCommands(platform.GitHub, "", "", "main", "auto-20260101-000000")
+		got := nextStepCommands(platform.GitHub, "", "", "main")
 		if got != nil {
 			t.Errorf("nextStepCommands() = %v, want nil", got)
 		}
@@ -60,7 +60,7 @@ func TestNextStepCommands(t *testing.T) {
 
 	t.Run("github feature branch", func(t *testing.T) {
 		t.Parallel()
-		got := nextStepCommands(platform.GitHub, "", "feat/thing", "main", "auto-20260101-000000")
+		got := nextStepCommands(platform.GitHub, "", "feat/thing", "main")
 		want := []string{
 			"git push -u origin feat/thing",
 			"gh pr create --fill --base main --head feat/thing",
@@ -71,7 +71,7 @@ func TestNextStepCommands(t *testing.T) {
 
 	t.Run("gitlab feature branch", func(t *testing.T) {
 		t.Parallel()
-		got := nextStepCommands(platform.GitLab, "group/project", "feat/thing", "main", "auto-20260101-000000")
+		got := nextStepCommands(platform.GitLab, "group/project", "feat/thing", "main")
 		want := []string{
 			"git push -u origin feat/thing",
 			"glab mr create -R group/project --source-branch feat/thing --target-branch main --fill --yes --remove-source-branch --squash-before-merge",
@@ -82,7 +82,7 @@ func TestNextStepCommands(t *testing.T) {
 
 	t.Run("unknown platform feature branch skips create command", func(t *testing.T) {
 		t.Parallel()
-		got := nextStepCommands("", "", "feat/thing", "main", "auto-20260101-000000")
+		got := nextStepCommands("", "", "feat/thing", "main")
 		want := []string{
 			"git push -u origin feat/thing",
 			"gmr  # pushes and opens MR/PR for this branch's commits",
@@ -92,35 +92,51 @@ func TestNextStepCommands(t *testing.T) {
 
 	t.Run("github main branch", func(t *testing.T) {
 		t.Parallel()
-		got := nextStepCommands(platform.GitHub, "", "main", "main", "fix-thing")
+		got := nextStepCommands(platform.GitHub, "", "main", "main")
 		want := []string{
 			"git push origin main",
-			"git switch -c fix-thing && git push -u origin fix-thing",
-			"gh pr create --fill --base main --head fix-thing",
-			"# Note: local main still has this commit; reset later with: git switch main && git reset --hard origin/main",
+			"gmr  # moves the commit to a new branch and opens MR/PR",
 		}
 		assertEqualCmds(t, got, want)
 	})
 
 	t.Run("gitlab main branch", func(t *testing.T) {
 		t.Parallel()
-		got := nextStepCommands(platform.GitLab, "group/project", "main", "main", "fix-thing")
+		got := nextStepCommands(platform.GitLab, "group/project", "main", "main")
 		want := []string{
 			"git push origin main",
-			"git switch -c fix-thing && git push -u origin fix-thing",
-			"glab mr create -R group/project --source-branch fix-thing --target-branch main --fill --yes --remove-source-branch --squash-before-merge",
-			"# Note: local main still has this commit; reset later with: git switch main && git reset --hard origin/main",
+			"gmr  # moves the commit to a new branch and opens MR/PR",
+		}
+		assertEqualCmds(t, got, want)
+	})
+
+	t.Run("unknown platform main branch", func(t *testing.T) {
+		t.Parallel()
+		got := nextStepCommands("", "", "main", "main")
+		want := []string{
+			"git push origin main",
+			"gmr  # moves the commit to a new branch and opens MR/PR",
 		}
 		assertEqualCmds(t, got, want)
 	})
 
 	t.Run("branch name needing quoting", func(t *testing.T) {
 		t.Parallel()
-		got := nextStepCommands(platform.GitHub, "", "feat/weird name", "main", "auto-20260101-000000")
+		got := nextStepCommands(platform.GitHub, "", "feat/weird name", "main")
 		want := []string{
 			"git push -u origin 'feat/weird name'",
 			"gh pr create --fill --base main --head 'feat/weird name'",
 			"gmr  # pushes and opens MR/PR for this branch's commits",
+		}
+		assertEqualCmds(t, got, want)
+	})
+
+	t.Run("main branch name needing quoting", func(t *testing.T) {
+		t.Parallel()
+		got := nextStepCommands(platform.GitHub, "", "weird main", "weird main")
+		want := []string{
+			"git push origin 'weird main'",
+			"gmr  # moves the commit to a new branch and opens MR/PR",
 		}
 		assertEqualCmds(t, got, want)
 	})

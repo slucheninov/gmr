@@ -57,6 +57,12 @@ gmr -h | -v
   `auto-YYYYMMDD-HHMMSS` as the final fallback.
 - On an existing feature branch, `gmr` reuses the branch and any commits ahead
   of the base branch. Uncommitted changes are committed there first.
+- On the base branch, when there are no working-tree changes but the base
+  branch has commits not yet pushed to `origin` (e.g. after `gmr -m` committed
+  there), `gmr` moves those commits to a new branch instead of erroring, then
+  opens the MR/PR and resets local base to `origin/<base>`. If there are also
+  working-tree changes, the new commit and the previously unpushed ones are
+  all included in the MR/PR, and the same base-branch reset happens after.
 - `deploy` and `status` are reserved when they are the first argument.
 - `gmr status` exits with status 1 when the newest run of any inspected ref has
   failed.

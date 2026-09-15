@@ -187,7 +187,20 @@ func run(opts gmrOptions) error {
 	if err != nil {
 		return err
 	}
-	if !hasChanges && !existingBranch {
+
+	// unpushed counts commits on mainBranch that are not yet on origin. It
+	// only matters on the base branch (a feature branch's ahead-count is
+	// checked separately, via HasCommitsSince), so it's left at 0 elsewhere.
+	var unpushed int
+	if !messageOnly && !existingBranch {
+		unpushed, err = git.UnpushedCount(r, mainBranch)
+		if err != nil {
+			return err
+		}
+	}
+
+	mode := decideCommitMode(hasChanges, existingBranch, unpushed)
+	if mode == modeNoChanges {
 		return errors.New("no changes to commit. Make some changes first")
 	}
 
@@ -197,12 +210,16 @@ func run(opts gmrOptions) error {
 	}
 
 	var commitMsg string
-	if hasChanges {
+	switch mode {
+	case modeGenerate:
 		if !hasAPIKey() {
 			return errors.New("no API key set. Export GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY")
 		}
 		if messageOnly {
 			return runMessageOnly(r, mainBranch)
+		}
+		if !existingBranch && unpushed > 0 {
+			ui.Log("Including %d unpushed commit(s) already on %s in this MR/PR", unpushed, mainBranch)
 		}
 		commitMsg, err = generateCommitMessage(r)
 		if err != nil {
@@ -211,7 +228,7 @@ func run(opts gmrOptions) error {
 		if commitMsg == "" {
 			return errors.New("commit message is empty. Aborted")
 		}
-	} else {
+	case modeExistingBranch:
 		hasCommits, err := git.HasCommitsSince(r, mainBranch)
 		if err != nil {
 			return err
@@ -219,10 +236,18 @@ func run(opts gmrOptions) error {
 		if !hasCommits {
 			return fmt.Errorf("branch %q has no commits ahead of %s", branchName, mainBranch)
 		}
-		commitMsg, err = git.LastCommitMessage(r)
+		lastMsg, err := git.LastCommitMessage(r)
 		if err != nil {
 			return err
 		}
+		commitMsg = lastMsg
+	case modeMoveUnpushed:
+		ui.Log("Found %d unpushed commit(s) on %s — moving them to a new branch", unpushed, mainBranch)
+		lastMsg, err := git.LastCommitMessage(r)
+		if err != nil {
+			return err
+		}
+		commitMsg = lastMsg
 	}
 
 	if branchName == "" {
@@ -337,6 +362,18 @@ func run(opts gmrOptions) error {
 		}
 	}
 
+	// The MR/PR was created successfully. If we moved commits off the base
+	// branch (onto branchName, which we're currently on), reset the local
+	// base branch to match origin so it no longer carries those commits.
+	if !existingBranch && unpushed > 0 {
+		if err := git.ResetBranchTo(r, mainBranch, "origin/"+mainBranch); err != nil {
+			ui.Warn("Could not reset local %s to origin/%s: %s", mainBranch, mainBranch, err)
+			ui.Warn("Run manually: git branch -f %s origin/%s", mainBranch, mainBranch)
+		} else {
+			ui.Log("Reset local %s to origin/%s (commits now live on %s)", mainBranch, mainBranch, branchName)
+		}
+	}
+
 	if !stayOnBranch && stdinIsTTY() {
 		stayOnBranch = askStayOnBranch(os.Stdin, branchName, mainBranch)
 	}
@@ -410,6 +447,42 @@ func detectPlatform(r git.Runner) (platformCtx, error) {
 		}
 	}
 	return pc, nil
+}
+
+// commitMode selects how run() obtains the commit message and whether a new
+// branch/commit is needed, given the working tree and branch state.
+type commitMode int
+
+const (
+	// modeNoChanges: nothing to do — no working-tree changes, not an existing
+	// feature branch ahead of mainBranch, and no unpushed commits on the base
+	// branch. run() reports an error.
+	modeNoChanges commitMode = iota
+	// modeGenerate: working-tree changes are present; generate a commit
+	// message via AI (or via runMessageOnly for `gmr -m`).
+	modeGenerate
+	// modeExistingBranch: on an existing feature branch with no working-tree
+	// changes but commits ahead of mainBranch; reuse the HEAD commit message.
+	modeExistingBranch
+	// modeMoveUnpushed: on the base branch with no working-tree changes, but
+	// the base branch itself has commits not yet pushed to origin; reuse the
+	// HEAD commit message and move those commits to a new branch.
+	modeMoveUnpushed
+)
+
+// decideCommitMode is a pure function so the branching logic in run() can be
+// unit-tested without a real Runner.
+func decideCommitMode(hasChanges, existingBranch bool, unpushed int) commitMode {
+	switch {
+	case hasChanges:
+		return modeGenerate
+	case existingBranch:
+		return modeExistingBranch
+	case unpushed > 0:
+		return modeMoveUnpushed
+	default:
+		return modeNoChanges
+	}
 }
 
 func resolveBranch(current, mainBranch, branchArg string) (string, bool, error) {
