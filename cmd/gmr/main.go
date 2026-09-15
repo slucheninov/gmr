@@ -47,7 +47,10 @@ Commands:
 
 Options:
   -h, --help      Show this help
-  -m, --message   Generate commit message only (no commit, branch, or MR/PR)
+  -m, --message   Generate a commit message, then ask whether to commit it
+                  to the current branch (prints push/MR-PR next steps on
+                  success), print it only ('n', the default on non-TTY
+                  stdin), or edit it first ('e'); never creates a branch
   -s, --stay      After creating MR/PR, stay on the feature branch (skips the
                   stay-or-switch question; otherwise gmr asks)
   -v, --version   Show version
@@ -184,7 +187,20 @@ func run(opts gmrOptions) error {
 	if err != nil {
 		return err
 	}
-	if !hasChanges && !existingBranch {
+
+	// unpushed counts commits on mainBranch that are not yet on origin. It
+	// only matters on the base branch (a feature branch's ahead-count is
+	// checked separately, via HasCommitsSince), so it's left at 0 elsewhere.
+	var unpushed int
+	if !messageOnly && !existingBranch {
+		unpushed, err = git.UnpushedCount(r, mainBranch)
+		if err != nil {
+			return err
+		}
+	}
+
+	mode := decideCommitMode(hasChanges, existingBranch, unpushed)
+	if mode == modeNoChanges {
 		return errors.New("no changes to commit. Make some changes first")
 	}
 
@@ -194,9 +210,16 @@ func run(opts gmrOptions) error {
 	}
 
 	var commitMsg string
-	if hasChanges {
+	switch mode {
+	case modeGenerate:
 		if !hasAPIKey() {
 			return errors.New("no API key set. Export GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY")
+		}
+		if messageOnly {
+			return runMessageOnly(r, mainBranch)
+		}
+		if !existingBranch && unpushed > 0 {
+			ui.Log("Including %d unpushed commit(s) already on %s in this MR/PR", unpushed, mainBranch)
 		}
 		commitMsg, err = generateCommitMessage(r)
 		if err != nil {
@@ -205,7 +228,7 @@ func run(opts gmrOptions) error {
 		if commitMsg == "" {
 			return errors.New("commit message is empty. Aborted")
 		}
-	} else {
+	case modeExistingBranch:
 		hasCommits, err := git.HasCommitsSince(r, mainBranch)
 		if err != nil {
 			return err
@@ -213,16 +236,18 @@ func run(opts gmrOptions) error {
 		if !hasCommits {
 			return fmt.Errorf("branch %q has no commits ahead of %s", branchName, mainBranch)
 		}
-		commitMsg, err = git.LastCommitMessage(r)
+		lastMsg, err := git.LastCommitMessage(r)
 		if err != nil {
 			return err
 		}
-	}
-
-	if messageOnly {
-		fmt.Println(commitMsg)
-		ui.OK("Commit message generated (not committed)")
-		return nil
+		commitMsg = lastMsg
+	case modeMoveUnpushed:
+		ui.Log("Found %d unpushed commit(s) on %s — moving them to a new branch", unpushed, mainBranch)
+		lastMsg, err := git.LastCommitMessage(r)
+		if err != nil {
+			return err
+		}
+		commitMsg = lastMsg
 	}
 
 	if branchName == "" {
@@ -337,6 +362,18 @@ func run(opts gmrOptions) error {
 		}
 	}
 
+	// The MR/PR was created successfully. If we moved commits off the base
+	// branch (onto branchName, which we're currently on), reset the local
+	// base branch to match origin so it no longer carries those commits.
+	if !existingBranch && unpushed > 0 {
+		if err := git.ResetBranchTo(r, mainBranch, "origin/"+mainBranch); err != nil {
+			ui.Warn("Could not reset local %s to origin/%s: %s", mainBranch, mainBranch, err)
+			ui.Warn("Run manually: git branch -f %s origin/%s", mainBranch, mainBranch)
+		} else {
+			ui.Log("Reset local %s to origin/%s (commits now live on %s)", mainBranch, mainBranch, branchName)
+		}
+	}
+
 	if !stayOnBranch && stdinIsTTY() {
 		stayOnBranch = askStayOnBranch(os.Stdin, branchName, mainBranch)
 	}
@@ -412,6 +449,42 @@ func detectPlatform(r git.Runner) (platformCtx, error) {
 	return pc, nil
 }
 
+// commitMode selects how run() obtains the commit message and whether a new
+// branch/commit is needed, given the working tree and branch state.
+type commitMode int
+
+const (
+	// modeNoChanges: nothing to do — no working-tree changes, not an existing
+	// feature branch ahead of mainBranch, and no unpushed commits on the base
+	// branch. run() reports an error.
+	modeNoChanges commitMode = iota
+	// modeGenerate: working-tree changes are present; generate a commit
+	// message via AI (or via runMessageOnly for `gmr -m`).
+	modeGenerate
+	// modeExistingBranch: on an existing feature branch with no working-tree
+	// changes but commits ahead of mainBranch; reuse the HEAD commit message.
+	modeExistingBranch
+	// modeMoveUnpushed: on the base branch with no working-tree changes, but
+	// the base branch itself has commits not yet pushed to origin; reuse the
+	// HEAD commit message and move those commits to a new branch.
+	modeMoveUnpushed
+)
+
+// decideCommitMode is a pure function so the branching logic in run() can be
+// unit-tested without a real Runner.
+func decideCommitMode(hasChanges, existingBranch bool, unpushed int) commitMode {
+	switch {
+	case hasChanges:
+		return modeGenerate
+	case existingBranch:
+		return modeExistingBranch
+	case unpushed > 0:
+		return modeMoveUnpushed
+	default:
+		return modeNoChanges
+	}
+}
+
 func resolveBranch(current, mainBranch, branchArg string) (string, bool, error) {
 	if current == "" {
 		return "", false, errors.New("detached HEAD is not supported. Check out a branch first")
@@ -454,48 +527,18 @@ func hasAPIKey() bool {
 }
 
 func generateCommitMessage(r git.Runner) (string, error) {
-	commitStyle := os.Getenv("GMR_COMMIT_STYLE")
-	ai.SetStyle(commitStyle)
-	isHumanStyle := !strings.EqualFold(strings.TrimSpace(commitStyle), "conventional")
-
-	if err := git.StageAll(r); err != nil {
-		return "", err
-	}
-	stat, err := git.CachedDiffStat(r)
+	msg, ok, err := generateRawMessage(r)
 	if err != nil {
 		return "", err
 	}
-	full, err := git.CachedDiff(r)
-	if err != nil {
-		return "", err
-	}
-
-	limit := maxDiffLines()
-	limited, truncated := git.LimitLines(full, limit)
-	diffContent := stat + "\n---\n" + limited
-	if truncated {
-		diffContent += fmt.Sprintf("\n... (diff truncated at %d lines)", limit)
-	}
-
-	msg := generate(ai.CommitPrompt + diffContent)
-
-	if msg == "" {
+	if !ok {
 		ui.Warn("All APIs unavailable. Enter commit message manually:")
 		reader := bufio.NewReader(os.Stdin)
 		line, _ := reader.ReadString('\n')
 		return strings.TrimSpace(line), nil
 	}
 
-	if isHumanStyle {
-		msg = commit.Humanize(msg)
-	}
-
-	fmt.Fprintln(ui.Out)
-	fmt.Fprintln(ui.Out, ui.Highlight("Generated commit message:"))
-	ui.Banner()
-	fmt.Fprintln(ui.Out, msg)
-	ui.Banner()
-	fmt.Fprintln(ui.Out)
+	printGeneratedMessage(msg)
 
 	fmt.Fprint(ui.Out, ui.Prompt("Accept? [Y/n/e(edit)]: "))
 	reader := bufio.NewReader(os.Stdin)
@@ -513,6 +556,55 @@ func generateCommitMessage(r git.Runner) (string, error) {
 		return strings.TrimSpace(edited), nil
 	}
 	return msg, nil
+}
+
+// generateRawMessage stages all changes (`git add -A`), builds a diff, and
+// asks the AI provider chain (see buildProviders) for a commit message,
+// humanizing it per GMR_COMMIT_STYLE. ok is false when every provider failed
+// or none is configured; the caller must then fall back to manual entry.
+func generateRawMessage(r git.Runner) (msg string, ok bool, err error) {
+	commitStyle := os.Getenv("GMR_COMMIT_STYLE")
+	ai.SetStyle(commitStyle)
+	isHumanStyle := !strings.EqualFold(strings.TrimSpace(commitStyle), "conventional")
+
+	if err := git.StageAll(r); err != nil {
+		return "", false, err
+	}
+	stat, err := git.CachedDiffStat(r)
+	if err != nil {
+		return "", false, err
+	}
+	full, err := git.CachedDiff(r)
+	if err != nil {
+		return "", false, err
+	}
+
+	limit := maxDiffLines()
+	limited, truncated := git.LimitLines(full, limit)
+	diffContent := stat + "\n---\n" + limited
+	if truncated {
+		diffContent += fmt.Sprintf("\n... (diff truncated at %d lines)", limit)
+	}
+
+	msg = generate(ai.CommitPrompt + diffContent)
+	if msg == "" {
+		return "", false, nil
+	}
+	if isHumanStyle {
+		msg = commit.Humanize(msg)
+	}
+	return msg, true, nil
+}
+
+// printGeneratedMessage prints the AI-generated commit message banner to
+// ui.Out (stderr), leaving stdout free for the message text itself.
+func printGeneratedMessage(msg string) {
+	fmt.Fprintln(ui.Out)
+	fmt.Fprintln(ui.Out, ui.Highlight("Generated commit message:"))
+	ui.Banner()
+	fmt.Fprintln(ui.Out, msg)
+	ui.Banner()
+	fmt.Fprintln(ui.Out)
 }
 
 // maxDiffLines returns the GMR_MAX_DIFF line limit, defaulting to 500.

@@ -131,6 +131,34 @@ func TestBuildProviders(t *testing.T) {
 	}
 }
 
+func TestDecideCommitMode(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name           string
+		hasChanges     bool
+		existingBranch bool
+		unpushed       int
+		want           commitMode
+	}{
+		{name: "base branch, no changes, nothing unpushed", want: modeNoChanges},
+		{name: "base branch with working-tree changes", hasChanges: true, want: modeGenerate},
+		{name: "feature branch with working-tree changes", hasChanges: true, existingBranch: true, want: modeGenerate},
+		{name: "feature branch, no changes, commits ahead", existingBranch: true, want: modeExistingBranch},
+		{name: "base branch, no changes, unpushed commits", unpushed: 2, want: modeMoveUnpushed},
+		{name: "base branch with changes and unpushed commits still generates", hasChanges: true, unpushed: 2, want: modeGenerate},
+		{name: "existing branch takes priority over unpushed (irrelevant combo)", existingBranch: true, unpushed: 3, want: modeExistingBranch},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := decideCommitMode(tt.hasChanges, tt.existingBranch, tt.unpushed)
+			if got != tt.want {
+				t.Errorf("decideCommitMode(%v, %v, %d) = %v, want %v", tt.hasChanges, tt.existingBranch, tt.unpushed, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestResolveBranch(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

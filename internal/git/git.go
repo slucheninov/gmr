@@ -90,6 +90,32 @@ func LastCommitMessage(r Runner) (string, error) {
 	return r.Run("log", "-1", "--pretty=%B")
 }
 
+// UnpushedCount returns the number of commits on branch that are not yet on
+// origin/branch. It returns 0 (no error) when there is no origin/branch
+// remote-tracking ref yet, e.g. a fresh repository that has never been
+// pushed, so callers don't need to special-case that.
+func UnpushedCount(r Runner, branch string) (int, error) {
+	if _, err := r.Run("show-ref", "--verify", "--quiet", "refs/remotes/origin/"+branch); err != nil {
+		return 0, nil
+	}
+	out, err := r.Run("rev-list", "--count", "origin/"+branch+".."+branch)
+	if err != nil {
+		return 0, err
+	}
+	count, err := strconv.Atoi(strings.TrimSpace(out))
+	if err != nil {
+		return 0, fmt.Errorf("invalid commit count %q: %w", out, err)
+	}
+	return count, nil
+}
+
+// ResetBranchTo force-moves branch to point at target. branch must not be
+// the currently checked-out branch.
+func ResetBranchTo(r Runner, branch, target string) error {
+	_, err := r.Run("branch", "-f", branch, target)
+	return err
+}
+
 // StageAll runs `git add -A`.
 func StageAll(r Runner) error {
 	_, err := r.Run("add", "-A")

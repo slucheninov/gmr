@@ -283,6 +283,82 @@ func TestLogRange_NoFrom(t *testing.T) {
 	}
 }
 
+func TestUnpushedCount_NoRemoteRef(t *testing.T) {
+	r := &fakeRunner{responses: map[string]struct {
+		out string
+		err error
+	}{
+		"show-ref --verify --quiet refs/remotes/origin/main": {err: errors.New("not found")},
+	}}
+	got, err := UnpushedCount(r, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 0 {
+		t.Errorf("UnpushedCount() = %d, want 0", got)
+	}
+}
+
+func TestUnpushedCount_WithRemoteRef(t *testing.T) {
+	tests := []struct {
+		name    string
+		out     string
+		runErr  error
+		want    int
+		wantErr bool
+	}{
+		{name: "ahead", out: "3", want: 3},
+		{name: "not ahead", out: "0", want: 0},
+		{name: "git error", runErr: errors.New("bad revision"), wantErr: true},
+		{name: "invalid count", out: "many", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &fakeRunner{responses: map[string]struct {
+				out string
+				err error
+			}{
+				"show-ref --verify --quiet refs/remotes/origin/main": {out: ""},
+				"rev-list --count origin/main..main":                 {out: tt.out, err: tt.runErr},
+			}}
+			got, err := UnpushedCount(r, "main")
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("UnpushedCount() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("UnpushedCount() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResetBranchTo(t *testing.T) {
+	r := &fakeRunner{responses: map[string]struct {
+		out string
+		err error
+	}{
+		"branch -f main origin/main": {out: ""},
+	}}
+	if err := ResetBranchTo(r, "main", "origin/main"); err != nil {
+		t.Fatalf("ResetBranchTo() error = %v", err)
+	}
+	if len(r.calls) != 1 || r.calls[0] != "branch -f main origin/main" {
+		t.Errorf("unexpected calls: %v", r.calls)
+	}
+}
+
+func TestResetBranchTo_Error(t *testing.T) {
+	r := &fakeRunner{responses: map[string]struct {
+		out string
+		err error
+	}{
+		"branch -f main origin/main": {err: errors.New("cannot force update")},
+	}}
+	if err := ResetBranchTo(r, "main", "origin/main"); err == nil {
+		t.Fatal("expected error")
+	}
+}
+
 func TestLastCommitMessage(t *testing.T) {
 	r := &fakeRunner{responses: map[string]struct {
 		out string

@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.11.0] - 2026-09-15
+
+### Changed
+- `gmr -m` now asks `Commit to '<current-branch>'? [Y/n/e(edit)] (n = print only):` after generating the message: `y`/empty commits it directly to the current branch (no new branch, push, or MR/PR), `n` (or any other input, and the default when stdin is not a TTY) just prints the message and leaves the already-staged changes untouched, and `e` opens `$EDITOR` before committing. The message is always printed to `stdout`, so `gmr -m | ...` stays pipe-friendly.
+- After a successful `gmr -m` commit, prints a "Next steps" block with copy-pasteable `git push`/`gh pr create`/`glab mr create`/`gmr` commands, detected from the `origin` remote without requiring `gh`/`glab` to be installed or authenticated.
+- `AGENTS.md` is now the single source of agent instructions for ChatGPT/Codex, Grok Build, Claude Code, and Gemini CLI. `CLAUDE.md` and the new `GEMINI.md` only point to and import `AGENTS.md`.
+
+### Fixed
+- `gmr` no longer fails with "no changes to commit" when the base branch itself has unpushed commits (e.g. after committing with `gmr -m` on main). It now moves those commits to a new branch, opens the MR/PR, and resets local main/master to `origin/<main>` once the MR/PR is created. Working-tree changes on the base branch with unpushed commits are handled the same way: the new commit and the previously unpushed ones are all included in the MR/PR.
+
 ## [0.10.1] - 2026-09-11
 
 ### Changed
