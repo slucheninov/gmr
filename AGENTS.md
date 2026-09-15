@@ -1,6 +1,18 @@
 # AGENTS.md
 
-Guidance for Codex and other coding agents working in this repository.
+Guidance for coding agents working in this repository.
+
+## Agent instruction files
+
+This file is the single source of truth. Edit only `AGENTS.md`; the other
+files are thin pointers and must not duplicate its content.
+
+| Agent | Entry point |
+|---|---|
+| ChatGPT / OpenAI Codex | `AGENTS.md` (read natively) |
+| Grok Build (xAI) | `AGENTS.md` (read natively) |
+| Claude Code | `CLAUDE.md` → imports `@AGENTS.md` |
+| Gemini CLI | `GEMINI.md` → imports `@AGENTS.md` |
 
 ## Overview
 
@@ -34,7 +46,7 @@ Keep orchestration in `cmd/gmr` and reusable/testable behavior in the relevant
 
 ```bash
 gmr [options] [branch-name] # commit changes and open an MR/PR
-gmr -m                     # print a generated commit message only
+gmr -m                     # generate a commit message, then optionally commit it
 gmr -s                     # create MR/PR and stay on the feature branch
 gmr deploy [options] [tag] # create and push a release tag
 gmr status [options] [ref] # report recent CI/CD runs
@@ -48,6 +60,11 @@ gmr -h | -v
 - `deploy` and `status` are reserved when they are the first argument.
 - `gmr status` exits with status 1 when the newest run of any inspected ref has
   failed.
+- `gmr -m` prints the generated message, then asks
+  `Commit to '<current-branch>'? [Y/n/e(edit)] (n = print only):`. `y`/empty
+  commits to the current branch (no new branch/push/MR/PR) and prints a
+  "Next steps" block of push/MR-PR commands; `n` (default on non-TTY stdin,
+  and any unrecognized answer) only prints; `e` opens `$EDITOR` first.
 
 ## Build, test, and lint
 

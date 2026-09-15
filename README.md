@@ -111,7 +111,7 @@ sudo install -m 0755 gmr /usr/local/bin/gmr
 
 ```bash
 gmr [options] [branch-name]   # full flow: commit + MR/PR
-gmr -m                          # generate commit message only
+gmr -m                          # generate commit message, then ask to commit it
 gmr -s                          # after MR/PR, stay on the feature branch
 gmr -h                          # help
 gmr -v                          # version
@@ -125,9 +125,18 @@ gmr status [options] [ref]      # show CI/CD pipeline status
 
 Якщо `gmr` запущено з уже створеної feature-гілки, яка має коміти відносно основної гілки, він використовує її як source branch і одразу створює MR/PR. Нова гілка та новий коміт не створюються, AI API key не потрібен, а після завершення (або помилки) `gmr` залишається на поточній feature-гілці. Якщо в ній є незакомічені зміни, вони спочатку комітяться у цю ж гілку.
 
-З прапорцем `-m` (`--message`) утиліта стейджить усі зміни через `git add -A` і
-генерує commit message через AI (виводиться у `stdout`), але не створює гілку,
-коміт або MR/PR. Працює з будь-якої гілки.
+З прапорцем `-m` (`--message`) утиліта стейджить усі зміни через `git add -A`,
+генерує commit message через AI і завжди виводить його у `stdout` (тому
+`gmr -m | ...` можна пайпити). Далі запитує
+`Commit to '<current-branch>'? [Y/n/e(edit)] (n = print only):` -
+`y`/`yes`/Enter комітить повідомлення в поточну гілку (без нової гілки, push
+чи MR/PR) і показує блок "Next steps" з готовими командами `git push` /
+`gh pr create` / `glab mr create` / `gmr`; `n`/`no` (і будь-яка інша
+відповідь - безпечний варіант за замовчуванням) лише друкує повідомлення,
+зміни лишаються застейдженими (`git reset` для розстейджування); `e`/`edit`
+відкриває `$EDITOR` перед комітом. Якщо stdin не інтерактивний термінал,
+питання не задається і gmr поводиться як при відповіді `n`. Працює з
+будь-якої гілки.
 
 З прапорцем `-s` (`--stay`) після успішного створення MR/PR ти залишаєшся на feature-гілці без жодних питань; без прапорця gmr запитає `Stay on branch '<branch>' or switch to '<main>'? [s/M]:` - `s`/`stay`/`y`/`yes` (без урахування регістру) залишає на гілці, будь-яка інша відповідь або Enter перемикає на основну гілку і робить `git pull`. Якщо stdin не є інтерактивним терміналом, питання пропускається і gmr одразу перемикається на основну гілку.
 

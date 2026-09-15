@@ -47,7 +47,10 @@ Commands:
 
 Options:
   -h, --help      Show this help
-  -m, --message   Generate commit message only (no commit, branch, or MR/PR)
+  -m, --message   Generate a commit message, then ask whether to commit it
+                  to the current branch (prints push/MR-PR next steps on
+                  success), print it only ('n', the default on non-TTY
+                  stdin), or edit it first ('e'); never creates a branch
   -s, --stay      After creating MR/PR, stay on the feature branch (skips the
                   stay-or-switch question; otherwise gmr asks)
   -v, --version   Show version
@@ -198,6 +201,9 @@ func run(opts gmrOptions) error {
 		if !hasAPIKey() {
 			return errors.New("no API key set. Export GEMINI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY")
 		}
+		if messageOnly {
+			return runMessageOnly(r, mainBranch)
+		}
 		commitMsg, err = generateCommitMessage(r)
 		if err != nil {
 			return err
@@ -217,12 +223,6 @@ func run(opts gmrOptions) error {
 		if err != nil {
 			return err
 		}
-	}
-
-	if messageOnly {
-		fmt.Println(commitMsg)
-		ui.OK("Commit message generated (not committed)")
-		return nil
 	}
 
 	if branchName == "" {
@@ -454,48 +454,18 @@ func hasAPIKey() bool {
 }
 
 func generateCommitMessage(r git.Runner) (string, error) {
-	commitStyle := os.Getenv("GMR_COMMIT_STYLE")
-	ai.SetStyle(commitStyle)
-	isHumanStyle := !strings.EqualFold(strings.TrimSpace(commitStyle), "conventional")
-
-	if err := git.StageAll(r); err != nil {
-		return "", err
-	}
-	stat, err := git.CachedDiffStat(r)
+	msg, ok, err := generateRawMessage(r)
 	if err != nil {
 		return "", err
 	}
-	full, err := git.CachedDiff(r)
-	if err != nil {
-		return "", err
-	}
-
-	limit := maxDiffLines()
-	limited, truncated := git.LimitLines(full, limit)
-	diffContent := stat + "\n---\n" + limited
-	if truncated {
-		diffContent += fmt.Sprintf("\n... (diff truncated at %d lines)", limit)
-	}
-
-	msg := generate(ai.CommitPrompt + diffContent)
-
-	if msg == "" {
+	if !ok {
 		ui.Warn("All APIs unavailable. Enter commit message manually:")
 		reader := bufio.NewReader(os.Stdin)
 		line, _ := reader.ReadString('\n')
 		return strings.TrimSpace(line), nil
 	}
 
-	if isHumanStyle {
-		msg = commit.Humanize(msg)
-	}
-
-	fmt.Fprintln(ui.Out)
-	fmt.Fprintln(ui.Out, ui.Highlight("Generated commit message:"))
-	ui.Banner()
-	fmt.Fprintln(ui.Out, msg)
-	ui.Banner()
-	fmt.Fprintln(ui.Out)
+	printGeneratedMessage(msg)
 
 	fmt.Fprint(ui.Out, ui.Prompt("Accept? [Y/n/e(edit)]: "))
 	reader := bufio.NewReader(os.Stdin)
@@ -513,6 +483,55 @@ func generateCommitMessage(r git.Runner) (string, error) {
 		return strings.TrimSpace(edited), nil
 	}
 	return msg, nil
+}
+
+// generateRawMessage stages all changes (`git add -A`), builds a diff, and
+// asks the AI provider chain (see buildProviders) for a commit message,
+// humanizing it per GMR_COMMIT_STYLE. ok is false when every provider failed
+// or none is configured; the caller must then fall back to manual entry.
+func generateRawMessage(r git.Runner) (msg string, ok bool, err error) {
+	commitStyle := os.Getenv("GMR_COMMIT_STYLE")
+	ai.SetStyle(commitStyle)
+	isHumanStyle := !strings.EqualFold(strings.TrimSpace(commitStyle), "conventional")
+
+	if err := git.StageAll(r); err != nil {
+		return "", false, err
+	}
+	stat, err := git.CachedDiffStat(r)
+	if err != nil {
+		return "", false, err
+	}
+	full, err := git.CachedDiff(r)
+	if err != nil {
+		return "", false, err
+	}
+
+	limit := maxDiffLines()
+	limited, truncated := git.LimitLines(full, limit)
+	diffContent := stat + "\n---\n" + limited
+	if truncated {
+		diffContent += fmt.Sprintf("\n... (diff truncated at %d lines)", limit)
+	}
+
+	msg = generate(ai.CommitPrompt + diffContent)
+	if msg == "" {
+		return "", false, nil
+	}
+	if isHumanStyle {
+		msg = commit.Humanize(msg)
+	}
+	return msg, true, nil
+}
+
+// printGeneratedMessage prints the AI-generated commit message banner to
+// ui.Out (stderr), leaving stdout free for the message text itself.
+func printGeneratedMessage(msg string) {
+	fmt.Fprintln(ui.Out)
+	fmt.Fprintln(ui.Out, ui.Highlight("Generated commit message:"))
+	ui.Banner()
+	fmt.Fprintln(ui.Out, msg)
+	ui.Banner()
+	fmt.Fprintln(ui.Out)
 }
 
 // maxDiffLines returns the GMR_MAX_DIFF line limit, defaulting to 500.
