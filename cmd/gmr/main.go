@@ -46,6 +46,12 @@ Commands:
   named "deploy" or "status" cannot be passed positionally to plain 'gmr'.
 
 Options:
+  -c, --commit    Generate a commit message, ask to commit it to the current
+                  branch and push that branch to origin ('e' edits first,
+                  'n' or non-TTY stdin prints only); never creates a branch
+                  or an MR/PR. With no working-tree changes, just pushes
+                  commits not yet on origin. Cannot be combined with -m, -s,
+                  or branch-name
   -h, --help      Show this help
   -m, --message   Generate a commit message, then ask whether to commit it
                   to the current branch (prints push/MR-PR next steps on
@@ -111,6 +117,7 @@ var (
 )
 
 type gmrOptions struct {
+	commitPush   bool
 	messageOnly  bool
 	stayOnBranch bool
 	branchArg    string
@@ -124,6 +131,8 @@ func parseGmrArgs(args []string) (gmrOptions, error) {
 			return gmrOptions{}, errShowHelp
 		case "-v", "--version":
 			return gmrOptions{}, errShowVersion
+		case "-c", "--commit":
+			o.commitPush = true
 		case "-m", "--message":
 			o.messageOnly = true
 		case "-s", "--stay":
@@ -136,6 +145,16 @@ func parseGmrArgs(args []string) (gmrOptions, error) {
 				return gmrOptions{}, fmt.Errorf("unexpected argument: %s", a)
 			}
 			o.branchArg = a
+		}
+	}
+	if o.commitPush {
+		switch {
+		case o.messageOnly:
+			return gmrOptions{}, errors.New("options -c and -m cannot be used together")
+		case o.stayOnBranch:
+			return gmrOptions{}, errors.New("options -c and -s cannot be used together")
+		case o.branchArg != "":
+			return gmrOptions{}, fmt.Errorf("-c commits to the current branch; branch-name %q is not allowed", o.branchArg)
 		}
 	}
 	return o, nil
@@ -153,6 +172,10 @@ func run(opts gmrOptions) error {
 	}
 
 	mainBranch := git.DetectMainBranch(r)
+
+	if opts.commitPush {
+		return runCommitPush(r, mainBranch)
+	}
 
 	var (
 		plat           platform.Kind

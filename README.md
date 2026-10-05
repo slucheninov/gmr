@@ -112,6 +112,7 @@ sudo install -m 0755 gmr /usr/local/bin/gmr
 ```bash
 gmr [options] [branch-name]   # full flow: commit + MR/PR
 gmr -m                          # generate commit message, then ask to commit it
+gmr -c                          # commit and push to the current branch, no MR/PR
 gmr -s                          # after MR/PR, stay on the feature branch
 gmr -h                          # help
 gmr -v                          # version
@@ -137,8 +138,21 @@ gmr status [options] [ref]      # show CI/CD pipeline status
 відповідь - безпечний варіант за замовчуванням) лише друкує повідомлення,
 зміни лишаються застейдженими (`git reset` для розстейджування); `e`/`edit`
 відкриває `$EDITOR` перед комітом. Якщо stdin не інтерактивний термінал,
-питання не задається і gmr поводиться як при відповіді `n`. Працює з
+питання не задається і gmr поводиться як при відповіді `n`; так само
+трактується EOF (Ctrl+D або stdin з `/dev/null`). Працює з
 будь-якої гілки.
+
+З прапорцем `-c` (`--commit`) утиліта комітить і пушить у поточну гілку без
+створення нової гілки та MR/PR (`gh`/`glab` не потрібні). Як і `-m`, вона
+стейджить усі зміни, генерує commit message, друкує його у `stdout` і запитує
+`Commit and push to '<current-branch>'? [Y/n/e(edit)] (n = print only):` -
+`y`/`yes`/Enter комітить і виконує `git push -u origin <branch>`; `e`/`edit`
+відкриває `$EDITOR` перед комітом; `n`/`no`, будь-яка інша відповідь або
+неінтерактивний stdin лише друкують повідомлення. Якщо незакомічених змін
+немає, AI не викликається: `gmr -c` просто пушить коміти, яких ще немає в
+`origin` (або саму гілку, якщо її там ще немає), а якщо пушити нічого -
+завершується помилкою. На основній гілці виводиться попередження, що push
+піде в неї напряму. Не поєднується з `-m`, `-s` і `branch-name`.
 
 З прапорцем `-s` (`--stay`) після успішного створення MR/PR ти залишаєшся на feature-гілці без жодних питань; без прапорця gmr запитає `Stay on branch '<branch>' or switch to '<main>'? [s/M]:` - `s`/`stay`/`y`/`yes` (без урахування регістру) залишає на гілці, будь-яка інша відповідь або Enter перемикає на основну гілку і робить `git pull`. Якщо stdin не є інтерактивним терміналом, питання пропускається і gmr одразу перемикається на основну гілку.
 

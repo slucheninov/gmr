@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.12.1] - 2026-10-05
+
+### Changed
+- Share commit-message generation, confirmation, editing, and commit execution between `gmr -m` and `gmr -c`, preserving each mode's output and post-commit behavior.
+
+## [0.12.0] - 2026-10-05
+
+### Added
+- `gmr -c` / `--commit`: commit and push to the current branch without creating a branch or an MR/PR. It stages all changes, generates the commit message (with manual fallback), prints it to `stdout`, and asks `Commit and push to '<current-branch>'? [Y/n/e(edit)] (n = print only):`. `y`/empty commits and runs `git push -u origin <branch>`, `e` opens `$EDITOR` first, and `n` (or any other input, and the default when stdin is not a TTY) only prints the message. With a clean working tree it skips AI and just pushes commits that are not on `origin` yet (or the branch itself if it was never pushed). On the base branch it warns that the push goes there directly. `gh`/`glab` are not required. Cannot be combined with `-m`, `-s`, or `branch-name`.
+
+### Fixed
+- `gmr -m` committed the changes when stdin was `/dev/null` (e.g. `gmr -m </dev/null`, cron, some CI runners) or when Ctrl+D was pressed at the `Commit to ...?` prompt: `/dev/null` is a character device, so it passed the TTY check, and the resulting EOF was read as an empty answer, i.e. the default "yes". EOF at the prompt now always means "print only".
+
 ## [0.11.0] - 2026-09-15
 
 ### Changed

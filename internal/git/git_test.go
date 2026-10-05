@@ -283,6 +283,22 @@ func TestLogRange_NoFrom(t *testing.T) {
 	}
 }
 
+func TestRemoteBranchExists(t *testing.T) {
+	r := &fakeRunner{responses: map[string]struct {
+		out string
+		err error
+	}{
+		"show-ref --verify --quiet refs/remotes/origin/feat": {out: ""},
+		"show-ref --verify --quiet refs/remotes/origin/new":  {err: errors.New("not found")},
+	}}
+	if !RemoteBranchExists(r, "feat") {
+		t.Error("expected origin/feat to exist")
+	}
+	if RemoteBranchExists(r, "new") {
+		t.Error("expected origin/new to not exist")
+	}
+}
+
 func TestUnpushedCount_NoRemoteRef(t *testing.T) {
 	r := &fakeRunner{responses: map[string]struct {
 		out string

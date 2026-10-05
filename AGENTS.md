@@ -47,6 +47,7 @@ Keep orchestration in `cmd/gmr` and reusable/testable behavior in the relevant
 ```bash
 gmr [options] [branch-name] # commit changes and open an MR/PR
 gmr -m                     # generate a commit message, then optionally commit it
+gmr -c                     # commit and push to the current branch, no MR/PR
 gmr -s                     # create MR/PR and stay on the feature branch
 gmr deploy [options] [tag] # create and push a release tag
 gmr status [options] [ref] # report recent CI/CD runs
@@ -71,6 +72,12 @@ gmr -h | -v
   commits to the current branch (no new branch/push/MR/PR) and prints a
   "Next steps" block of push/MR-PR commands; `n` (default on non-TTY stdin,
   and any unrecognized answer) only prints; `e` opens `$EDITOR` first.
+- `gmr -c` uses the same prompt (`Commit and push to '<current-branch>'?`)
+  but pushes the current branch (`git push -u origin <branch>`) after the
+  commit; it never creates a branch or MR/PR and needs no `gh`/`glab`. With a
+  clean working tree it skips AI and pushes unpushed commits, or errors when
+  the branch is up to date with `origin`. It warns on the base branch and
+  rejects `-m`, `-s`, and `branch-name`.
 
 ## Build, test, and lint
 
@@ -118,7 +125,7 @@ a binary build smoke test.
 
 ## Security and privacy
 
-- Commit generation, including `gmr -m`, runs `git add -A` and sends the diff
+- Commit generation, including `gmr -m` and `gmr -c`, runs `git add -A` and sends the diff
   stat plus up to `GMR_MAX_DIFF` diff lines to the selected AI endpoint.
 - Release generation may send commit subjects and bodies since the previous tag.
 - `GMR_MAX_DIFF` is a line limit, not an opt-out switch; zero or invalid values

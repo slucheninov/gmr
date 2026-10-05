@@ -60,6 +60,31 @@ func TestParseGmrArgs(t *testing.T) {
 			want: gmrOptions{stayOnBranch: true},
 		},
 		{
+			name: "commit short",
+			args: []string{"-c"},
+			want: gmrOptions{commitPush: true},
+		},
+		{
+			name: "commit long",
+			args: []string{"--commit"},
+			want: gmrOptions{commitPush: true},
+		},
+		{
+			name:    "commit with message",
+			args:    []string{"-c", "-m"},
+			wantErr: errors.New("options -c and -m cannot be used together"),
+		},
+		{
+			name:    "commit with stay",
+			args:    []string{"--stay", "--commit"},
+			wantErr: errors.New("options -c and -s cannot be used together"),
+		},
+		{
+			name:    "commit with branch",
+			args:    []string{"-c", "feat/x"},
+			wantErr: errors.New(`-c commits to the current branch; branch-name "feat/x" is not allowed`),
+		},
+		{
 			name:    "help",
 			args:    []string{"-h"},
 			wantErr: errShowHelp,
