@@ -59,6 +59,8 @@ Options:
                   stdin), or edit it first ('e'); never creates a branch
   -s, --stay      After creating MR/PR, stay on the feature branch (skips the
                   stay-or-switch question; otherwise gmr asks)
+  -u, --update    Update gmr to the latest stable release (verifies SHA-256);
+                  use alone, without commit flags or branch-name
   -v, --version   Show version
 
 Environment variables:
@@ -117,6 +119,7 @@ var (
 )
 
 type gmrOptions struct {
+	update       bool
 	commitPush   bool
 	messageOnly  bool
 	stayOnBranch bool
@@ -131,6 +134,8 @@ func parseGmrArgs(args []string) (gmrOptions, error) {
 			return gmrOptions{}, errShowHelp
 		case "-v", "--version":
 			return gmrOptions{}, errShowVersion
+		case "-u", "--update":
+			o.update = true
 		case "-c", "--commit":
 			o.commitPush = true
 		case "-m", "--message":
@@ -147,6 +152,9 @@ func parseGmrArgs(args []string) (gmrOptions, error) {
 			o.branchArg = a
 		}
 	}
+	if o.update && (o.commitPush || o.messageOnly || o.stayOnBranch || o.branchArg != "") {
+		return gmrOptions{}, errors.New("-u must be used alone, without -c, -m, -s, or branch-name")
+	}
 	if o.commitPush {
 		switch {
 		case o.messageOnly:
@@ -161,6 +169,10 @@ func parseGmrArgs(args []string) (gmrOptions, error) {
 }
 
 func run(opts gmrOptions) error {
+	if opts.update {
+		return runUpdate()
+	}
+
 	messageOnly := opts.messageOnly
 	stayOnBranch := opts.stayOnBranch
 	branchArg := opts.branchArg

@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.13.0] - 2026-10-05
+
+### Added
+- `gmr -u` / `--update`: update the running executable to the latest stable GitHub release for Linux, macOS, or Windows on amd64/arm64, with SHA-256 verification and safe binary replacement. Works outside a Git repository without Go, hosting CLIs, or AI keys; skips equal/newer versions and follows installation symlinks. Requires write access to the installation directory and cannot be combined with commit flags or a branch name.
+
+## [0.12.2] - 2026-10-05
+
+### Fixed
+- Upgrade `actions/upload-artifact` from v5 to v6 in CI and release workflows to use Node.js 24 and eliminate the Node.js 20 deprecation warning.
+
 ## [0.12.1] - 2026-10-05
 
 ### Changed

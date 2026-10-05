@@ -29,6 +29,7 @@ for releases and `gmr status` for CI/CD status. The platform is detected from th
 cmd/gmr/main.go             CLI entry point, argument parsing, and MR/PR flow
 cmd/gmr/deploy.go           `gmr deploy` release orchestration
 cmd/gmr/status.go           `gmr status` CI/CD reporting
+cmd/gmr/update.go           `gmr -u` self-update orchestration
 internal/ai/                AI provider interface and Gemini/Claude/OpenAI clients
 internal/ci/                GitHub Actions and GitLab pipeline adapters
 internal/commit/            commit title/body, branch name, and MR description helpers
@@ -36,6 +37,7 @@ internal/git/               git command wrapper and testable Runner interface
 internal/platform/          platform detection and GitLab project-path parsing
 internal/release/           semver, next-tag, and AI release-response helpers
 internal/ui/                stderr logging and ANSI colors; honors NO_COLOR
+internal/update/            release downloads, checksum verification, binary replacement
 internal/version/           build version; overridable with -ldflags
 ```
 
@@ -51,6 +53,7 @@ gmr -c                     # commit and push to the current branch, no MR/PR
 gmr -s                     # create MR/PR and stay on the feature branch
 gmr deploy [options] [tag] # create and push a release tag
 gmr status [options] [ref] # report recent CI/CD runs
+gmr -u                     # update this executable to the latest stable release
 gmr -h | -v
 ```
 
@@ -64,6 +67,13 @@ gmr -h | -v
   opens the MR/PR and resets local base to `origin/<base>`. If there are also
   working-tree changes, the new commit and the previously unpushed ones are
   all included in the MR/PR, and the same base-branch reset happens after.
+- `gmr -u` / `--update` downloads the latest stable GitHub release for the
+  current OS/architecture, verifies its archive against `checksums.txt`, and
+  replaces the running executable (following symlinks). It needs no repository,
+  git, Go, hosting CLI, or AI key. Equal/newer versions are left unchanged;
+  unversioned development builds are replaced. Use it alone, without `-c`,
+  `-m`, `-s`, or `branch-name`. The installation directory must be writable.
+  Windows keeps the previous executable as `.old` until the next update.
 - `deploy` and `status` are reserved when they are the first argument.
 - `gmr status` exits with status 1 when the newest run of any inspected ref has
   failed.
