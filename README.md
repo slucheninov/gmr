@@ -68,6 +68,30 @@ sudo install -m 0755 gmr /usr/local/bin/gmr
 
 ## Update
 
+### Автоматичне оновлення
+
+```bash
+gmr -u  # або gmr --update
+```
+
+Завантажує останній стабільний реліз з GitHub для поточної ОС
+(Linux/macOS/Windows) та архітектури (amd64/arm64), перевіряє SHA-256 архіву
+за `checksums.txt` і замінює бінарник, з якого запущено команду. Працює з
+будь-якої теки, без Git-репозиторію, Go, `gh`/`glab` чи AI-ключів; потрібен
+доступ до GitHub. Додаткового підтвердження немає. Символічні посилання
+зберігаються — оновлюється їхня ціль.
+
+Якщо поточна версія така сама або новіша, команда нічого не змінює.
+Збірки з нерозпізнаною версією (наприклад, `dev-<sha>`) замінюються останнім
+стабільним релізом. Помилки завантаження або перевірки залишають старий
+бінарник на місці. На Windows попередній бінарник зберігається як
+`gmr.exe.old` до наступного оновлення.
+
+Потрібні права запису до теки встановлення. Для системної інсталяції на
+Linux/macOS можна запустити `sudo /usr/local/bin/gmr -u` (вкажи фактичний
+шлях до свого бінарника). Прапорець `-u` не поєднується з `-c`, `-m`, `-s`
+або назвою гілки. Способи ручного оновлення наведено нижче.
+
 ### Pre-built binary для Linux/macOS
 
 ```bash
@@ -114,6 +138,7 @@ gmr [options] [branch-name]   # full flow: commit + MR/PR
 gmr -m                          # generate commit message, then ask to commit it
 gmr -c                          # commit and push to the current branch, no MR/PR
 gmr -s                          # after MR/PR, stay on the feature branch
+gmr -u                          # update gmr to the latest stable release
 gmr -h                          # help
 gmr -v                          # version
 gmr deploy [options] [tag]      # cut and publish the next release tag
