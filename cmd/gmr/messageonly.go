@@ -1,10 +1,7 @@
 package main
 
 import (
-	"bufio"
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
@@ -12,40 +9,6 @@ import (
 	"github.com/slucheninov/gmr/internal/platform"
 	"github.com/slucheninov/gmr/internal/ui"
 )
-
-// msgOnlyAction is the user's choice at the `gmr -m` commit prompt.
-type msgOnlyAction int
-
-const (
-	actionPrintOnly msgOnlyAction = iota
-	actionCommit
-	actionEdit
-)
-
-// parseMessageOnlyChoice interprets the raw line read from stdin at the
-// `gmr -m` commit prompt. "y"/"yes"/empty commits to the current branch,
-// "e"/"edit" opens $EDITOR first and then commits, and everything else
-// (including "n"/"no") is the safe default: print the message only, no git
-// actions.
-func parseMessageOnlyChoice(input string) msgOnlyAction {
-	switch strings.ToLower(strings.TrimSpace(input)) {
-	case "", "y", "yes":
-		return actionCommit
-	case "e", "edit":
-		return actionEdit
-	default:
-		return actionPrintOnly
-	}
-}
-
-// promptMessageOnlyChoice writes the commit prompt for branch to ui.Out and
-// reads the answer from in, returning the parsed choice.
-func promptMessageOnlyChoice(in io.Reader, branch string) msgOnlyAction {
-	fmt.Fprint(ui.Out, ui.Prompt(fmt.Sprintf("Commit to '%s'? [Y/n/e(edit)] (n = print only): ", branch)))
-	reader := bufio.NewReader(in)
-	line, _ := reader.ReadString('\n')
-	return parseMessageOnlyChoice(line)
-}
 
 // runMessageOnly implements `gmr -m`: it generates a commit message (falling
 // back to manual entry if every AI provider fails), then asks whether to
@@ -55,20 +18,9 @@ func promptMessageOnlyChoice(in io.Reader, branch string) msgOnlyAction {
 // stderr via the ui package. When stdin is not a TTY, it never prompts and
 // behaves as if "n" (print only) was chosen, so scripted/piped use is safe.
 func runMessageOnly(r git.Runner, mainBranch string) error {
-	msg, ok, err := generateRawMessage(r)
+	msg, err := obtainCommitMessage(r)
 	if err != nil {
 		return err
-	}
-	if !ok {
-		ui.Warn("All APIs unavailable. Enter commit message manually:")
-		reader := bufio.NewReader(os.Stdin)
-		line, _ := reader.ReadString('\n')
-		msg = strings.TrimSpace(line)
-	} else {
-		printGeneratedMessage(msg)
-	}
-	if msg == "" {
-		return errors.New("commit message is empty. Aborted")
 	}
 
 	current, err := git.CurrentBranch(r)
@@ -78,7 +30,7 @@ func runMessageOnly(r git.Runner, mainBranch string) error {
 
 	action := actionPrintOnly
 	if stdinIsTTY() {
-		action = promptMessageOnlyChoice(os.Stdin, current)
+		action = promptCommitChoice(os.Stdin, fmt.Sprintf("Commit to '%s'?", current))
 	}
 
 	return actOnMessageOnlyChoice(r, action, msg, current, mainBranch)
@@ -87,32 +39,18 @@ func runMessageOnly(r git.Runner, mainBranch string) error {
 // actOnMessageOnlyChoice performs the git action for action, prints msg to
 // stdout in every case, and prints a "Next steps" hint block after a
 // successful commit.
-func actOnMessageOnlyChoice(r git.Runner, action msgOnlyAction, msg, current, mainBranch string) error {
-	if action == actionEdit {
-		edited, err := editInEditor(msg)
-		if err != nil {
-			return err
-		}
-		edited = strings.TrimSpace(edited)
-		if edited == "" {
-			return errors.New("commit message is empty. Aborted")
-		}
-		msg = edited
-		action = actionCommit
+func actOnMessageOnlyChoice(r git.Runner, action commitAction, msg, current, mainBranch string) error {
+	committed, err := commitWithChoice(r, action, msg, current)
+	if err != nil {
+		return err
 	}
 
-	fmt.Println(msg)
-
-	if action != actionCommit {
+	if !committed {
 		ui.OK("Commit message generated (not committed)")
 		ui.Log("Changes are staged; unstage with: git reset")
 		return nil
 	}
 
-	if err := git.Commit(r, msg); err != nil {
-		return err
-	}
-	ui.OK("Committed to '%s'", current)
 	printNextSteps(r, current, mainBranch)
 	return nil
 }

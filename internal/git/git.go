@@ -95,7 +95,7 @@ func LastCommitMessage(r Runner) (string, error) {
 // remote-tracking ref yet, e.g. a fresh repository that has never been
 // pushed, so callers don't need to special-case that.
 func UnpushedCount(r Runner, branch string) (int, error) {
-	if _, err := r.Run("show-ref", "--verify", "--quiet", "refs/remotes/origin/"+branch); err != nil {
+	if !RemoteBranchExists(r, branch) {
 		return 0, nil
 	}
 	out, err := r.Run("rev-list", "--count", "origin/"+branch+".."+branch)
@@ -107,6 +107,13 @@ func UnpushedCount(r Runner, branch string) (int, error) {
 		return 0, fmt.Errorf("invalid commit count %q: %w", out, err)
 	}
 	return count, nil
+}
+
+// RemoteBranchExists reports whether origin/<branch> exists as a
+// remote-tracking ref (i.e. the branch has been pushed or fetched).
+func RemoteBranchExists(r Runner, branch string) bool {
+	_, err := r.Run("show-ref", "--verify", "--quiet", "refs/remotes/origin/"+branch)
+	return err == nil
 }
 
 // ResetBranchTo force-moves branch to point at target. branch must not be

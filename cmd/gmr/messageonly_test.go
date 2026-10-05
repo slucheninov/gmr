@@ -1,51 +1,10 @@
 package main
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/slucheninov/gmr/internal/platform"
 )
-
-func TestParseMessageOnlyChoice(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		input string
-		want  msgOnlyAction
-	}{
-		{"", actionCommit},
-		{"\n", actionCommit},
-		{"y\n", actionCommit},
-		{"Y\n", actionCommit},
-		{"yes\n", actionCommit},
-		{"  yes  \n", actionCommit},
-		{"n\n", actionPrintOnly},
-		{"N\n", actionPrintOnly},
-		{"no\n", actionPrintOnly},
-		{"e\n", actionEdit},
-		{"E\n", actionEdit},
-		{"edit\n", actionEdit},
-		{"anything\n", actionPrintOnly},
-		{"q\n", actionPrintOnly},
-	}
-	for _, tt := range cases {
-		t.Run(tt.input, func(t *testing.T) {
-			t.Parallel()
-			got := parseMessageOnlyChoice(tt.input)
-			if got != tt.want {
-				t.Errorf("parseMessageOnlyChoice(%q) = %v, want %v", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestPromptMessageOnlyChoice(t *testing.T) {
-	t.Parallel()
-	got := promptMessageOnlyChoice(strings.NewReader("e\n"), "feature-x")
-	if got != actionEdit {
-		t.Errorf("promptMessageOnlyChoice() = %v, want actionEdit", got)
-	}
-}
 
 func TestNextStepCommands(t *testing.T) {
 	t.Parallel()
